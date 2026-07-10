@@ -1,0 +1,1368 @@
+{
+  "spec": 2.7,
+  "description": "DTRExp draft-2.8 conformance vectors. An implementation is conforming iff it (a) rejects every `invalid` expression at parse time, (b) reports a warning for every `warnings` expression while accepting it, (c) accepts every `quiet` expression with NO warnings, and (d) returns the expected boolean from covers(instant, {tz}) for every instant in every `coverage` group. Instants are absolute (ISO 8601 UTC); `tz` is the evaluation time zone. These vectors — not the spec prose — are the contract.",
+  "coverage": [
+    {
+      "id": "month-single",
+      "expression": "M3",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T12:00:00Z": true,
+        "2024-03-01T00:00:00Z": true,
+        "2024-04-01T00:00:00Z": false,
+        "2023-03-20T08:00:00Z": true,
+        "2024-02-29T12:00:00Z": false
+      }
+    },
+    {
+      "id": "month-list",
+      "expression": "M3,7",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-10T00:00:00Z": true,
+        "2024-07-10T00:00:00Z": true,
+        "2024-06-10T00:00:00Z": false
+      }
+    },
+    {
+      "id": "month-range-inclusive",
+      "expression": "M3:7",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-01T00:00:00Z": true,
+        "2024-05-15T00:00:00Z": true,
+        "2024-07-31T23:59:59Z": true,
+        "2024-08-01T00:00:00Z": false,
+        "2024-02-15T00:00:00Z": false
+      }
+    },
+    {
+      "id": "month-exclusion",
+      "expression": "M!7",
+      "tz": "UTC",
+      "cases": {
+        "2024-07-15T00:00:00Z": false,
+        "2024-08-15T00:00:00Z": true,
+        "2024-01-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "month-negative",
+      "expression": "M-1",
+      "tz": "UTC",
+      "cases": {
+        "2024-12-15T00:00:00Z": true,
+        "2024-11-15T00:00:00Z": false
+      }
+    },
+    {
+      "id": "year-single",
+      "expression": "Y2018",
+      "tz": "UTC",
+      "cases": {
+        "2018-06-15T00:00:00Z": true,
+        "2018-01-01T00:00:00Z": true,
+        "2017-12-31T23:59:59Z": false,
+        "2019-01-01T00:00:00Z": false
+      }
+    },
+    {
+      "id": "year-vs-weekyear",
+      "expression": "Y2026",
+      "tz": "UTC",
+      "cases": {
+        "2025-12-29T12:00:00Z": false,
+        "2026-01-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "quarter",
+      "expression": "Q2",
+      "tz": "UTC",
+      "cases": {
+        "2024-04-01T00:00:00Z": true,
+        "2024-06-30T23:59:59Z": true,
+        "2024-07-01T00:00:00Z": false,
+        "2024-03-31T23:59:59Z": false
+      }
+    },
+    {
+      "id": "day-range",
+      "expression": "D1:15",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T23:59:59Z": true,
+        "2024-01-16T00:00:00Z": false,
+        "2024-02-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "day-negative-last",
+      "expression": "D-1",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-29T12:00:00Z": true,
+        "2024-02-28T12:00:00Z": false,
+        "2023-02-28T12:00:00Z": true,
+        "2024-04-30T12:00:00Z": true,
+        "2024-04-29T12:00:00Z": false
+      }
+    },
+    {
+      "id": "day-last7-of-month",
+      "expression": "D-7:*",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-23T00:00:00Z": true,
+        "2024-02-22T23:59:59Z": false,
+        "2023-02-22T00:00:00Z": true,
+        "2023-02-21T00:00:00Z": false,
+        "2024-01-25T00:00:00Z": true,
+        "2024-01-24T00:00:00Z": false
+      }
+    },
+    {
+      "id": "day-last7-of-year",
+      "expression": "D-7:* Y*",
+      "tz": "UTC",
+      "cases": {
+        "2024-12-25T00:00:00Z": true,
+        "2024-12-24T23:59:59Z": false,
+        "2023-12-25T00:00:00Z": true,
+        "2023-12-24T00:00:00Z": false,
+        "2024-12-31T23:59:59Z": true
+      }
+    },
+    {
+      "id": "christmas-day",
+      "expression": "D25 M12",
+      "tz": "UTC",
+      "cases": {
+        "2025-12-25T18:00:00Z": true,
+        "2025-12-24T18:00:00Z": false,
+        "2025-12-26T00:00:00Z": false
+      }
+    },
+    {
+      "id": "leap-day",
+      "expression": "D29 M2",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-29T00:00:00Z": true,
+        "2023-02-28T12:00:00Z": false,
+        "2023-03-01T00:00:00Z": false,
+        "2100-02-28T12:00:00Z": false,
+        "2100-03-01T12:00:00Z": false,
+        "2000-02-29T12:00:00Z": true
+      }
+    },
+    {
+      "id": "day-of-quarter",
+      "expression": "D40 Q2",
+      "tz": "UTC",
+      "cases": {
+        "2024-05-10T12:00:00Z": true,
+        "2024-05-11T00:00:00Z": false,
+        "2024-04-09T00:00:00Z": false
+      }
+    },
+    {
+      "id": "weekday-single",
+      "expression": "E1",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-06T12:00:00Z": true,
+        "2026-07-07T12:00:00Z": false,
+        "2020-01-06T00:00:00Z": true
+      }
+    },
+    {
+      "id": "weekday-range",
+      "expression": "E6:7",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-03T12:00:00Z": true,
+        "2026-04-26T12:00:00Z": true,
+        "2018-03-05T12:00:00Z": false
+      }
+    },
+    {
+      "id": "weekday-exclusion",
+      "expression": "E!6:7",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-03T12:00:00Z": false,
+        "2026-07-07T12:00:00Z": true
+      }
+    },
+    {
+      "id": "ordinal-last-sunday-april",
+      "expression": "E7#-1 M4",
+      "tz": "UTC",
+      "cases": {
+        "2026-04-26T12:00:00Z": true,
+        "2026-04-19T12:00:00Z": false,
+        "2026-04-27T12:00:00Z": false
+      }
+    },
+    {
+      "id": "ordinal-mothers-day",
+      "expression": "E7#2 M5",
+      "tz": "UTC",
+      "cases": {
+        "2026-05-10T12:00:00Z": true,
+        "2026-05-03T12:00:00Z": false,
+        "2026-05-17T12:00:00Z": false
+      }
+    },
+    {
+      "id": "ordinal-fifth-sunday-existence",
+      "expression": "E7#5",
+      "tz": "UTC",
+      "cases": {
+        "2026-05-31T12:00:00Z": true,
+        "2026-05-24T12:00:00Z": false,
+        "2026-04-26T12:00:00Z": false
+      }
+    },
+    {
+      "id": "weekday-month-year",
+      "expression": "E1 M3 Y2018",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-05T12:00:00Z": true,
+        "2018-03-12T12:00:00Z": true,
+        "2018-03-07T12:00:00Z": false,
+        "2018-03-06T12:00:00Z": false,
+        "2019-03-04T12:00:00Z": false
+      }
+    },
+    {
+      "id": "wednesdays-march-2018",
+      "expression": "E3 M3 Y2018",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-07T12:00:00Z": true,
+        "2018-03-28T12:00:00Z": true,
+        "2018-03-05T12:00:00Z": false
+      }
+    },
+    {
+      "id": "isoweek-weekyear",
+      "expression": "W1 Y2026",
+      "tz": "UTC",
+      "cases": {
+        "2025-12-29T12:00:00Z": true,
+        "2026-01-01T12:00:00Z": true,
+        "2026-01-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "isoweek-53-existence",
+      "expression": "W53",
+      "tz": "UTC",
+      "cases": {
+        "2020-12-30T12:00:00Z": true,
+        "2021-12-30T12:00:00Z": false,
+        "2026-12-28T12:00:00Z": true
+      }
+    },
+    {
+      "id": "isoweek-range-bounded-years",
+      "expression": "W1:10 Y2015:2029",
+      "tz": "UTC",
+      "cases": {
+        "2026-01-15T12:00:00Z": true,
+        "2015-01-15T12:00:00Z": true,
+        "2026-04-01T12:00:00Z": false,
+        "2014-01-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "business-hours",
+      "expression": "T0900:1800 E1:5",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T10:00:00Z": true,
+        "2026-07-07T08:59:59Z": false,
+        "2026-07-07T18:00:00Z": false,
+        "2026-07-07T17:59:59Z": true,
+        "2026-07-11T10:00:00Z": false,
+        "2026-07-07T07:30:00Z": false
+      }
+    },
+    {
+      "id": "business-hours-lunch-break",
+      "expression": "T0900:1200,1300:1800 E1:5",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T12:30:00Z": false,
+        "2026-07-07T13:30:00Z": true,
+        "2026-07-07T11:59:00Z": true
+      }
+    },
+    {
+      "id": "time-single-value-unit-interval",
+      "expression": "T12",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T12:00:00Z": true,
+        "2026-07-07T12:59:59.999Z": true,
+        "2026-07-07T13:00:00Z": false,
+        "2026-07-07T11:59:59Z": false
+      }
+    },
+    {
+      "id": "time-midnight-wrap",
+      "expression": "T2200:0600",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T23:00:00Z": true,
+        "2026-07-07T05:00:00Z": true,
+        "2026-07-07T22:00:00Z": true,
+        "2026-07-07T06:00:00Z": false,
+        "2026-07-07T12:00:00Z": false
+      }
+    },
+    {
+      "id": "time-midnight-wrap-weekday-gotcha",
+      "expression": "T2200:0600 E5",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-10T23:00:00Z": true,
+        "2026-07-10T02:00:00Z": true,
+        "2026-07-11T02:00:00Z": false,
+        "2026-07-09T23:00:00Z": false
+      }
+    },
+    {
+      "id": "time-seconds-precision",
+      "expression": "T093015:093020",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T09:30:17Z": true,
+        "2026-07-07T09:30:15Z": true,
+        "2026-07-07T09:30:20Z": false,
+        "2026-07-07T09:30:14Z": false
+      }
+    },
+    {
+      "id": "hour-stride",
+      "expression": "H0/4",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T04:30:00Z": true,
+        "2026-07-07T05:00:00Z": false,
+        "2026-07-07T20:59:00Z": true,
+        "2026-07-07T00:00:00Z": true,
+        "2026-07-07T23:00:00Z": false
+      }
+    },
+    {
+      "id": "einstein-nap",
+      "expression": "m0:19 H0/4",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T04:10:00Z": true,
+        "2026-07-07T04:25:00Z": false,
+        "2026-07-07T08:00:00Z": true,
+        "2026-07-07T08:19:59Z": true,
+        "2026-07-07T08:20:00Z": false,
+        "2026-07-07T05:10:00Z": false
+      }
+    },
+    {
+      "id": "seconds-selector",
+      "expression": "s0:29",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-07T10:00:15Z": true,
+        "2026-07-07T10:00:45Z": false
+      }
+    },
+    {
+      "id": "month-stride",
+      "expression": "M1/3",
+      "tz": "UTC",
+      "cases": {
+        "2024-04-15T00:00:00Z": true,
+        "2024-02-15T00:00:00Z": false,
+        "2024-10-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "month-stride-block",
+      "expression": "M1/5/2",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-15T00:00:00Z": true,
+        "2024-03-15T00:00:00Z": false,
+        "2024-06-15T00:00:00Z": true,
+        "2024-05-15T00:00:00Z": false,
+        "2024-12-15T00:00:00Z": true
+      }
+    },
+    {
+      "id": "month-stride-bounded",
+      "expression": "M1:6/2",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T00:00:00Z": true,
+        "2024-02-15T00:00:00Z": false,
+        "2024-03-15T00:00:00Z": true,
+        "2024-05-15T00:00:00Z": true,
+        "2024-06-15T00:00:00Z": false,
+        "2024-07-15T00:00:00Z": false
+      }
+    },
+    {
+      "id": "year-stride-anchored-range",
+      "expression": "Y2020:2040/3",
+      "tz": "UTC",
+      "cases": {
+        "2020-06-15T00:00:00Z": true,
+        "2023-06-15T00:00:00Z": true,
+        "2024-06-15T00:00:00Z": false,
+        "2038-06-15T00:00:00Z": true,
+        "2041-06-15T00:00:00Z": false,
+        "2019-06-15T00:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-every-10-days",
+      "expression": "20200106/10D",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-06T12:00:00Z": true,
+        "2020-01-07T00:00:00Z": false,
+        "2020-01-15T12:00:00Z": false,
+        "2020-01-16T12:00:00Z": true,
+        "2020-02-05T12:00:00Z": true,
+        "2020-01-05T12:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-10-days-3-long",
+      "expression": "20200106/10D/3D",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-06T00:00:00Z": true,
+        "2020-01-08T23:59:59Z": true,
+        "2020-01-09T00:00:00Z": false,
+        "2020-01-16T12:00:00Z": true,
+        "2020-01-18T12:00:00Z": true,
+        "2020-01-19T00:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-every-14-months",
+      "expression": "20180301/14M",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-15T00:00:00Z": true,
+        "2018-04-15T00:00:00Z": false,
+        "2019-05-10T00:00:00Z": true,
+        "2019-03-10T00:00:00Z": false,
+        "2020-07-01T00:00:00Z": true,
+        "2020-06-30T23:59:59Z": false,
+        "2018-02-15T00:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-constrain-month-end",
+      "expression": "20240131/3M/1D",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-31T12:00:00Z": true,
+        "2024-02-01T00:00:00Z": false,
+        "2024-04-30T12:00:00Z": true,
+        "2024-04-29T12:00:00Z": false,
+        "2024-05-01T00:00:00Z": false,
+        "2024-07-31T12:00:00Z": true,
+        "2024-10-31T12:00:00Z": true
+      }
+    },
+    {
+      "id": "cadence-constrain-leap-anniversary",
+      "expression": "20240229/1Y/1D",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-29T12:00:00Z": true,
+        "2025-02-28T12:00:00Z": true,
+        "2025-03-01T00:00:00Z": false,
+        "2025-02-27T12:00:00Z": false,
+        "2026-02-28T12:00:00Z": true,
+        "2028-02-29T12:00:00Z": true
+      }
+    },
+    {
+      "id": "bounds-with-weekday",
+      "expression": "E6:7 20180301:20190425",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-03T12:00:00Z": true,
+        "2018-02-24T12:00:00Z": false,
+        "2019-04-20T12:00:00Z": true,
+        "2019-04-27T12:00:00Z": false,
+        "2018-03-05T12:00:00Z": false
+      }
+    },
+    {
+      "id": "bounds-span-inclusive-end",
+      "expression": "20180301:20190425",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-01T00:00:00Z": true,
+        "2018-02-28T23:59:59Z": false,
+        "2019-04-25T23:59:59Z": true,
+        "2019-04-26T00:00:00Z": false
+      }
+    },
+    {
+      "id": "bounds-open-start-minute-end",
+      "expression": "*:20180120T1800",
+      "tz": "UTC",
+      "cases": {
+        "2018-01-20T18:00:59Z": true,
+        "2018-01-20T18:01:00Z": false,
+        "2017-06-15T00:00:00Z": true,
+        "2018-01-19T12:00:00Z": true
+      }
+    },
+    {
+      "id": "bounds-single-day",
+      "expression": "20180120",
+      "tz": "UTC",
+      "cases": {
+        "2018-01-20T00:00:00Z": true,
+        "2018-01-20T23:59:59.999Z": true,
+        "2018-01-21T00:00:00Z": false,
+        "2018-01-19T23:59:00Z": false
+      }
+    },
+    {
+      "id": "time-on-single-day",
+      "expression": "T1800:2000 20180120",
+      "tz": "UTC",
+      "cases": {
+        "2018-01-20T19:00:00Z": true,
+        "2018-01-20T20:00:00Z": false,
+        "2018-01-21T19:00:00Z": false
+      }
+    },
+    {
+      "id": "union-first-third-friday",
+      "expression": "E5#1 | E5#3",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-03T12:00:00Z": true,
+        "2026-07-17T12:00:00Z": true,
+        "2026-07-10T12:00:00Z": false,
+        "2026-07-24T12:00:00Z": false,
+        "2026-07-06T12:00:00Z": false
+      }
+    },
+    {
+      "id": "dst-gap-and-overlap-berlin",
+      "expression": "T0230:0300",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2026-03-29T00:45:00Z": false,
+        "2026-03-29T01:30:00Z": false,
+        "2026-10-25T00:30:00Z": true,
+        "2026-10-25T01:30:00Z": true,
+        "2026-07-07T00:45:00Z": true
+      }
+    },
+    {
+      "id": "tz-parameter-berlin",
+      "expression": "T0900:1800 E1:5",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2026-07-07T07:30:00Z": true,
+        "2026-07-07T16:30:00Z": false
+      }
+    },
+    {
+      "id": "wrap-month",
+      "expression": "M11:2",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T12:00:00Z": true,
+        "2024-02-29T12:00:00Z": true,
+        "2024-03-01T00:00:00Z": false,
+        "2024-10-31T23:59:59Z": false,
+        "2024-11-01T00:00:00Z": true,
+        "2024-12-15T12:00:00Z": true
+      }
+    },
+    {
+      "id": "wrap-hour-weekday",
+      "expression": "H22:6 E5",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-10T23:30:00Z": true,
+        "2026-07-10T03:30:00Z": true,
+        "2026-07-10T06:59:59Z": true,
+        "2026-07-10T07:00:00Z": false,
+        "2026-07-10T12:00:00Z": false,
+        "2026-07-11T23:30:00Z": false
+      }
+    },
+    {
+      "id": "cadence-hour-period",
+      "expression": "20200106T0000/6H/1H",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-06T00:30:00Z": true,
+        "2020-01-06T01:30:00Z": false,
+        "2020-01-06T06:30:00Z": true,
+        "2020-01-05T23:30:00Z": false,
+        "2020-01-06T12:15:00Z": true
+      }
+    },
+    {
+      "id": "cadence-minute-period",
+      "expression": "20200106T0000/90m/30m",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-06T00:15:00Z": true,
+        "2020-01-06T00:45:00Z": false,
+        "2020-01-06T01:45:00Z": true,
+        "2020-01-06T02:15:00Z": false,
+        "2020-01-06T03:15:00Z": true
+      }
+    },
+    {
+      "id": "week-year-vs-calendar-fields",
+      "expression": "M12 W1 Y2026",
+      "tz": "UTC",
+      "cases": {
+        "2025-12-29T12:00:00Z": true,
+        "2026-01-01T12:00:00Z": false,
+        "2026-12-15T12:00:00Z": false,
+        "2024-12-30T12:00:00Z": false
+      }
+    },
+    {
+      "id": "wrap-with-exclusion",
+      "expression": "M!11:2",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T12:00:00Z": false,
+        "2024-02-15T12:00:00Z": false,
+        "2024-11-15T12:00:00Z": false,
+        "2024-12-15T12:00:00Z": false,
+        "2024-03-15T12:00:00Z": true,
+        "2024-06-15T12:00:00Z": true
+      }
+    },
+    {
+      "id": "wrap-in-list",
+      "expression": "M11:2,5",
+      "tz": "UTC",
+      "cases": {
+        "2024-11-15T12:00:00Z": true,
+        "2024-01-15T12:00:00Z": true,
+        "2024-05-15T12:00:00Z": true,
+        "2024-04-15T12:00:00Z": false,
+        "2024-06-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "wrap-quarter",
+      "expression": "Q4:1",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T12:00:00Z": true,
+        "2024-11-15T12:00:00Z": true,
+        "2024-05-15T12:00:00Z": false,
+        "2024-08-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "wrap-week53-partial",
+      "expression": "W53:2",
+      "tz": "UTC",
+      "cases": {
+        "2020-12-30T12:00:00Z": true,
+        "2021-01-06T12:00:00Z": true,
+        "2021-01-14T12:00:00Z": true,
+        "2021-01-20T12:00:00Z": false,
+        "2021-12-30T12:00:00Z": false,
+        "2022-01-05T12:00:00Z": true
+      }
+    },
+    {
+      "id": "open-start-hour",
+      "expression": "H*:3",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-05T00:00:00Z": true,
+        "2024-03-05T02:30:00Z": true,
+        "2024-03-05T03:59:00Z": true,
+        "2024-03-05T04:00:00Z": false
+      }
+    },
+    {
+      "id": "stride-open-anchored",
+      "expression": "Y2020:*/3",
+      "tz": "UTC",
+      "cases": {
+        "2020-06-15T12:00:00Z": true,
+        "2023-06-15T12:00:00Z": true,
+        "2021-06-15T12:00:00Z": false,
+        "2035-06-15T12:00:00Z": true,
+        "2036-06-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "weekday-negative",
+      "expression": "E-1",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-10T12:00:00Z": true,
+        "2024-03-11T12:00:00Z": false
+      }
+    },
+    {
+      "id": "ordinal-year-scope",
+      "expression": "E1#1 Y*",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-01T12:00:00Z": true,
+        "2024-01-08T12:00:00Z": false,
+        "2026-01-05T12:00:00Z": true,
+        "2026-01-12T12:00:00Z": false
+      }
+    },
+    {
+      "id": "t-millisecond-precision",
+      "expression": "T093015.250:093015.750",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-05T09:30:15.300Z": true,
+        "2024-03-05T09:30:15.200Z": false,
+        "2024-03-05T09:30:15.750Z": false,
+        "2024-03-05T09:30:15.749Z": true
+      }
+    },
+    {
+      "id": "no-space-components",
+      "expression": "M3Y2018",
+      "tz": "UTC",
+      "cases": {
+        "2018-03-15T12:00:00Z": true,
+        "2018-04-15T12:00:00Z": false,
+        "2019-03-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-cross-unit-duration",
+      "expression": "20200101/10D/36H",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-01T06:00:00Z": true,
+        "2020-01-02T05:00:00Z": true,
+        "2020-01-02T13:00:00Z": false,
+        "2020-01-11T00:30:00Z": true,
+        "2020-01-06T12:00:00Z": false
+      }
+    },
+    {
+      "id": "wrap-zero-endpoint",
+      "expression": "H22:0",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-01T22:30:00Z": true,
+        "2020-01-01T23:30:00Z": true,
+        "2020-01-01T00:30:00Z": true,
+        "2020-01-01T01:30:00Z": false,
+        "2020-01-01T12:00:00Z": false
+      }
+    },
+    {
+      "id": "bounds-local-zone",
+      "expression": "20180120",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2018-01-19T23:30:00Z": true,
+        "2018-01-20T22:59:00Z": true,
+        "2018-01-19T22:30:00Z": false,
+        "2018-01-20T23:30:00Z": false
+      }
+    },
+    {
+      "id": "cadence-month-duration-end",
+      "expression": "20240131/3M/1M",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-31T12:00:00Z": true,
+        "2024-02-15T12:00:00Z": true,
+        "2024-02-29T12:00:00Z": false,
+        "2024-04-30T12:00:00Z": true,
+        "2024-05-29T23:00:00Z": true,
+        "2024-05-30T12:00:00Z": false,
+        "2024-05-31T12:00:00Z": false
+      }
+    },
+    {
+      "id": "stride-year-open-large",
+      "expression": "Y2020:*/100",
+      "tz": "UTC",
+      "cases": {
+        "2020-06-01T00:00:00Z": true,
+        "2021-06-01T00:00:00Z": false,
+        "2120-06-01T00:00:00Z": true,
+        "2119-06-01T00:00:00Z": false
+      }
+    },
+    {
+      "id": "negative-symmetric-limit",
+      "expression": "D-31",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-01T12:00:00Z": true,
+        "2024-01-02T12:00:00Z": false,
+        "2024-02-01T12:00:00Z": false,
+        "2024-03-01T12:00:00Z": true
+      }
+    },
+    {
+      "id": "negative-zero-based",
+      "expression": "H-1",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-01T23:30:00Z": true,
+        "2020-01-01T22:30:00Z": false,
+        "2020-01-01T00:30:00Z": false
+      }
+    },
+    {
+      "id": "dst-cadence-local-gap",
+      "expression": "20240331T0230/2D",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-03-31T00:30:00Z": false,
+        "2024-03-31T02:00:00Z": true,
+        "2024-03-31T22:00:00Z": true,
+        "2024-04-01T01:00:00Z": false,
+        "2024-04-01T02:00:00Z": false,
+        "2024-04-02T02:00:00Z": true
+      }
+    },
+    {
+      "id": "dst-cadence-local-overlap",
+      "expression": "20241027T0230/2D",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-10-27T00:00:00Z": false,
+        "2024-10-27T00:45:00Z": true,
+        "2024-10-27T01:00:00Z": false,
+        "2024-10-27T01:45:00Z": true,
+        "2024-10-27T12:00:00Z": true,
+        "2024-10-28T01:00:00Z": true,
+        "2024-10-28T01:45:00Z": false
+      }
+    },
+    {
+      "id": "dst-cadence-absolute-anchor-overlap",
+      "expression": "20241027T0230/4H",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-10-27T00:45:00Z": true,
+        "2024-10-27T01:45:00Z": false,
+        "2024-10-27T04:45:00Z": true,
+        "2024-10-27T05:45:00Z": false,
+        "2024-10-27T08:45:00Z": true
+      }
+    },
+    {
+      "id": "dst-bounds-local-overlap",
+      "expression": "20241027T0230",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-10-27T00:30:30Z": true,
+        "2024-10-27T01:30:30Z": true,
+        "2024-10-27T00:29:30Z": false,
+        "2024-10-27T01:31:30Z": false,
+        "2024-10-27T00:31:30Z": false
+      }
+    },
+    {
+      "id": "time-hour24-range-end",
+      "expression": "T2200:2400",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T22:00:00Z": true,
+        "2024-03-15T23:59:59Z": true,
+        "2024-03-15T21:59:59Z": false,
+        "2024-03-16T00:00:00Z": false
+      }
+    },
+    {
+      "id": "time-hour24-whole-day",
+      "expression": "T0000:2400",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T00:00:00Z": true,
+        "2024-03-15T12:00:00Z": true,
+        "2024-03-15T23:59:59Z": true
+      }
+    },
+    {
+      "id": "dst-cadence-wallclock-duration",
+      "expression": "20241026T2300/2D/12H",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-10-26T20:59:00Z": false,
+        "2024-10-26T21:30:00Z": true,
+        "2024-10-27T00:30:00Z": true,
+        "2024-10-27T01:30:00Z": true,
+        "2024-10-27T09:30:00Z": true,
+        "2024-10-27T10:30:00Z": false,
+        "2024-10-28T12:00:00Z": false,
+        "2024-10-28T22:30:00Z": true
+      }
+    },
+    {
+      "id": "selector-star-star-range",
+      "expression": "M*:*",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T12:00:00Z": true,
+        "2019-11-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "day-of-year-leap",
+      "expression": "D366 Y2020",
+      "tz": "UTC",
+      "cases": {
+        "2020-12-31T12:00:00Z": true,
+        "2020-12-30T12:00:00Z": false,
+        "2021-12-31T12:00:00Z": false
+      }
+    },
+    {
+      "id": "dst-cadence-anchor-gap-forward",
+      "expression": "20240331T0230/4H",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-03-31T01:15:00Z": false,
+        "2024-03-31T01:45:00Z": true,
+        "2024-03-31T02:15:00Z": true,
+        "2024-03-31T05:15:00Z": false,
+        "2024-03-31T05:45:00Z": true
+      }
+    },
+    {
+      "id": "bounds-equal-literals-minute",
+      "expression": "20180120T1800:20180120T1800",
+      "tz": "UTC",
+      "cases": {
+        "2018-01-20T17:59:59Z": false,
+        "2018-01-20T18:00:30Z": true,
+        "2018-01-20T18:01:00Z": false
+      }
+    },
+    {
+      "id": "bounds-mixed-precision",
+      "expression": "20180120T1800:20180120T180000",
+      "tz": "UTC",
+      "cases": {
+        "2018-01-20T18:00:00Z": true,
+        "2018-01-20T18:00:01Z": false
+      }
+    },
+    {
+      "id": "year-domain-edge",
+      "expression": "Y9999",
+      "tz": "UTC",
+      "cases": {
+        "9999-06-15T12:00:00Z": true,
+        "9998-06-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "union-no-space",
+      "expression": "M3|M5",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T12:00:00Z": true,
+        "2024-05-15T12:00:00Z": true,
+        "2024-04-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "whitespace-tolerance",
+      "expression": " M3 | M5 ",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T12:00:00Z": true,
+        "2024-05-15T12:00:00Z": true,
+        "2024-04-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "time-range-endpoint-span-start",
+      "expression": "T0900:12",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-05T08:59:59Z": false,
+        "2024-03-05T09:00:00Z": true,
+        "2024-03-05T11:59:59Z": true,
+        "2024-03-05T12:00:00Z": false,
+        "2024-03-05T12:30:00Z": false
+      }
+    },
+    {
+      "id": "day-scope-order-free",
+      "expression": "Q2 D40",
+      "tz": "UTC",
+      "cases": {
+        "2024-05-10T12:00:00Z": true,
+        "2024-05-11T12:00:00Z": false,
+        "2024-04-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "stride-negative-end",
+      "expression": "D2:-1/5",
+      "tz": "UTC",
+      "cases": {
+        "2024-02-02T12:00:00Z": true,
+        "2024-02-07T12:00:00Z": true,
+        "2024-02-08T12:00:00Z": false,
+        "2024-02-27T12:00:00Z": true,
+        "2024-02-29T12:00:00Z": false
+      }
+    },
+    {
+      "id": "ordinal-negative-base",
+      "expression": "E-1#2",
+      "tz": "UTC",
+      "cases": {
+        "2026-07-12T12:00:00Z": true,
+        "2026-07-05T12:00:00Z": false,
+        "2026-07-19T12:00:00Z": false
+      }
+    },
+    {
+      "id": "absolute-grid-day-duration",
+      "expression": "20200101/48H/1D",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2020-03-28T12:00:00Z": false,
+        "2020-03-29T12:00:00Z": true,
+        "2020-03-29T22:30:00Z": true,
+        "2020-03-29T23:30:00Z": false
+      }
+    },
+    {
+      "id": "star-range-in-list",
+      "expression": "M11:*,5",
+      "tz": "UTC",
+      "cases": {
+        "2024-11-15T12:00:00Z": true,
+        "2024-12-15T12:00:00Z": true,
+        "2024-05-15T12:00:00Z": true,
+        "2024-06-15T12:00:00Z": false
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "expression": "",
+      "reason": "empty expression"
+    },
+    {
+      "expression": "X5",
+      "reason": "unknown designator"
+    },
+    {
+      "expression": "M",
+      "reason": "designator without value"
+    },
+    {
+      "expression": "M13",
+      "reason": "value out of domain (month 1-12)"
+    },
+    {
+      "expression": "M0",
+      "reason": "zero value"
+    },
+    {
+      "expression": "E8",
+      "reason": "weekday out of domain (1-7)"
+    },
+    {
+      "expression": "D367 Y*",
+      "reason": "day-of-year out of domain (1-366)"
+    },
+    {
+      "expression": "Y*/3",
+      "reason": "anchorless stride — explicit start required"
+    },
+    {
+      "expression": "M3/14",
+      "reason": "stride interval exceeds parent domain — use a cadence"
+    },
+    {
+      "expression": "M1/1",
+      "reason": "stride interval must be >= 2"
+    },
+    {
+      "expression": "M1/3/3",
+      "reason": "stride duration must be < interval"
+    },
+    {
+      "expression": "M1,3/2",
+      "reason": "stride not allowed on a list"
+    },
+    {
+      "expression": "D-10:*/2",
+      "reason": "stride start must be non-negative (end-relative anchors shift per parent instance)"
+    },
+    {
+      "expression": "M3!5",
+      "reason": "exclusion only immediately after the designator"
+    },
+    {
+      "expression": "M3 M5",
+      "reason": "duplicate designator in one expression"
+    },
+    {
+      "expression": "20230229/1Y",
+      "reason": "cadence anchor is not a real calendar date"
+    },
+    {
+      "expression": "20240131/1M",
+      "reason": "default duration (1M) equals period — duration must be < period"
+    },
+    {
+      "expression": "20200101/10D/20D",
+      "reason": "cadence duration exceeds period"
+    },
+    {
+      "expression": "20200101/0D",
+      "reason": "zero cadence period"
+    },
+    {
+      "expression": "20200101/10X",
+      "reason": "unknown cadence unit"
+    },
+    {
+      "expression": "20200106/10D 20300101/10D",
+      "reason": "more than one cadence per expression"
+    },
+    {
+      "expression": "M3 20180101:* 20190101:*",
+      "reason": "more than one bounds component per expression"
+    },
+    {
+      "expression": "20180301:20170301",
+      "reason": "backwards bounds range"
+    },
+    {
+      "expression": "20180120T1801:20180120T1800",
+      "reason": "backwards bounds — the start span begins exactly at the end span's end, an empty window"
+    },
+    {
+      "expression": "D0",
+      "reason": "zero value on a 1-based domain"
+    },
+    {
+      "expression": "E7#0",
+      "reason": "ordinal zero"
+    },
+    {
+      "expression": "E7#6",
+      "reason": "ordinal out of range (-5..-1, 1..5)"
+    },
+    {
+      "expression": "D5#2",
+      "reason": "ordinal only valid on E"
+    },
+    {
+      "expression": "T2500:2600",
+      "reason": "hour out of range in time value"
+    },
+    {
+      "expression": "T0960:1000",
+      "reason": "minute out of range in time value"
+    },
+    {
+      "expression": "T2400:0100",
+      "reason": "'2400' is valid only in range-end position"
+    },
+    {
+      "expression": "T22:24",
+      "reason": "hour 24 is the exact 4-digit token '2400' — 2-digit '24' is not a valid range end"
+    },
+    {
+      "expression": "T2300:24",
+      "reason": "hour 24 is the exact 4-digit token '2400', whatever the start's precision"
+    },
+    {
+      "expression": "T0000:240000",
+      "reason": "hour 24 never carries seconds precision — the exact token '2400' only"
+    },
+    {
+      "expression": "T0000:2430",
+      "reason": "hour out of range — 24 exists only as the exact token '2400'"
+    },
+    {
+      "expression": "T0900:2500",
+      "reason": "hour out of range in range-end position"
+    },
+    {
+      "expression": "M3 |",
+      "reason": "empty union branch"
+    },
+    {
+      "expression": "M3~",
+      "reason": "unexpected trailing character"
+    },
+    {
+      "expression": "20200101/10D/1M",
+      "reason": "month/year duration unit requires a month/year period"
+    },
+    {
+      "expression": "Y-1",
+      "reason": "negative value on Y — no edge to count back from"
+    },
+    {
+      "expression": "Y0",
+      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)"
+    },
+    {
+      "expression": "Y12000",
+      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)"
+    },
+    {
+      "expression": "M1,*",
+      "reason": "bare '*' in a list — the list is already the whole domain"
+    },
+    {
+      "expression": "T!0900:1200",
+      "reason": "T takes no exclusion — write the complement explicitly"
+    },
+    {
+      "expression": "T0900:*",
+      "reason": "T takes no '*'"
+    },
+    {
+      "expression": "T0900:1800/2",
+      "reason": "T takes no stride"
+    },
+    {
+      "expression": "20240101/2M/58D",
+      "reason": "duration not conservatively smaller than period (58d >= 2x28d)"
+    },
+    {
+      "expression": "T0900:0900",
+      "reason": "T range with equal endpoints — half-open, would cover nothing"
+    },
+    {
+      "expression": "T12:1200",
+      "reason": "equal resolved endpoints — range endpoints resolve to span-start instants"
+    },
+    {
+      "expression": "M3\tM5",
+      "reason": "whitespace is the ASCII space only — tabs are syntax errors"
+    },
+    {
+      "expression": "H-0",
+      "reason": "'-0' is not a value — the sign requires a nonzero integer"
+    },
+    {
+      "expression": "M-0",
+      "reason": "'-0' is not a value — the sign requires a nonzero integer"
+    },
+    {
+      "expression": "Q2 D40 M1",
+      "reason": "M wins D's scope by granularity, never textual order — D40 is out of the month domain"
+    },
+    {
+      "expression": "20180120T2400/1D",
+      "reason": "hour 24 never appears in a date literal — it is a T-range token only"
+    },
+    {
+      "expression": "20180120T09",
+      "reason": "malformed time-part in date literal — T-glue is unconditional, no re-tokenization"
+    },
+    {
+      "expression": "*:*",
+      "reason": "bounds require at least one date-literal endpoint"
+    },
+    {
+      "expression": "D-32",
+      "reason": "negative value out of domain — symmetric parse-time check (-31…-1 for month-scoped D)"
+    }
+  ],
+  "warnings": [
+    {
+      "expression": "D30 M2",
+      "warning": "unsatisfiable — no February has 30 days"
+    },
+    {
+      "expression": "M-1 Q1",
+      "warning": "unsatisfiable — M-1 is December, and December ∩ Q1 is empty"
+    },
+    {
+      "expression": "M-2:2",
+      "warning": "unsatisfiable — resolved start (November) exceeds end (February) in every year"
+    },
+    {
+      "expression": "D-1:5",
+      "warning": "unsatisfiable — the last day is never on or before day 5"
+    },
+    {
+      "expression": "W53 Y2021",
+      "warning": "unsatisfiable — week-year 2021 has 52 weeks"
+    },
+    {
+      "expression": "D30 M2 | M3",
+      "warning": "unsatisfiable union branch — no February has 30 days; dead branches still warn"
+    },
+    {
+      "expression": "D366 Y2021",
+      "warning": "unsatisfiable — calendar year 2021 has 365 days (the day-of-year twin of W53)"
+    },
+    {
+      "expression": "D366:* Y2021",
+      "warning": "unsatisfiable — 366:* resolves to 366:365 in 2021, backwards in every instance"
+    },
+    {
+      "expression": "D30:*/2 M2",
+      "warning": "unsatisfiable — a stride is sugar over a range; no February reaches day 30"
+    }
+  ],
+  "quiet": [
+    {
+      "expression": "D366 Y2020",
+      "note": "leap year 2020 has a day 366"
+    },
+    {
+      "expression": "D366:* Y2020",
+      "note": "366:* resolves to 366:366 in a leap year — nonempty"
+    },
+    {
+      "expression": "W53 Y2020",
+      "note": "week-year 2020 has 53 weeks"
+    },
+    {
+      "expression": "D366 Y2020:*",
+      "note": "open year span — statically undecidable, stays quiet"
+    },
+    {
+      "expression": "D366 W1 Y2025",
+      "note": "with W present, Y is the week-year: day 366 of calendar 2024 (Dec 31) lies in week-year 2025 W1 — cross-selector analysis, stays quiet"
+    },
+    {
+      "expression": "H22:6",
+      "note": "a true wrap range (literal non-negative endpoints) is never statically empty"
+    }
+  ]
+}

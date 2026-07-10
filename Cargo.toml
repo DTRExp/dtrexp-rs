@@ -1,0 +1,17 @@
+[package]
+name = "dtrexp"
+version = "0.1.0"
+edition = "2021"
+description = "Date-Time Range & Recurrence Expression — a compact coverage-expression language (DTRExp draft 2.8)"
+license = "MIT"
+
+[lib]
+name = "dtrexp"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+
+[profile.test]
+opt-level = 0
