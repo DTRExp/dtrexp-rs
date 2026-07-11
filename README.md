@@ -27,7 +27,7 @@ use dtrexp::{parse, Tz};
 let expr = parse("T0900:1800 E1:5").unwrap();   // business hours, Mon–Fri
 
 // 2026-07-07 (a Tuesday) 10:00:00Z, in ms since the Unix epoch:
-let t: i64 = 1_783_591_200_000;
+let t: i64 = 1_783_418_400_000;
 
 let ok = expr.covers(t, "Europe/Berlin").unwrap();
 // —> true; a weekday, 09:00–18:00 Berlin local time.
