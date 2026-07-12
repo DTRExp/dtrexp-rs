@@ -1,4 +1,4 @@
-//! The parsed abstract syntax of a DTRExp expression.
+//! The parsed abstract syntax of a DTRExp.
 
 use crate::civil::Naive;
 

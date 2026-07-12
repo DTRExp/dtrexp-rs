@@ -29,7 +29,7 @@ mod validate;
 pub use error::{ParseError, UnknownTimeZone, Warning};
 pub use tz::Tz;
 
-/// A parsed, validated DTRExp expression.
+/// A parsed, validated DTRExp.
 #[derive(Clone, Debug)]
 pub struct Dtrexp {
     branches: Vec<ast::Expr>,

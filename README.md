@@ -24,19 +24,19 @@ Rust 2021 edition. No dependencies, including the zone handling; IANA zones are 
 ```rust
 use dtrexp::{parse, Tz};
 
-let expr = parse("T0900:1800 E1:5").unwrap();   // business hours, Mon–Fri
+let dtr = parse("T0900:1800 E1:5").unwrap();   // business hours, Mon–Fri
 
 // 2026-07-07 (a Tuesday) 10:00:00Z, in ms since the Unix epoch:
 let t: i64 = 1_783_418_400_000;
 
-let ok = expr.covers(t, "Europe/Berlin").unwrap();
+let ok = dtr.covers(t, "Europe/Berlin").unwrap();
 // —> true; a weekday, 09:00–18:00 Berlin local time.
 // The zone is an evaluation parameter, never part of the expression;
 // an empty identifier or "UTC" means UTC.
 
 // Preloaded zone; cannot fail:
 let berlin = Tz::load("Europe/Berlin").unwrap();
-let ok = expr.covers_in(t, &berlin);
+let ok = dtr.covers_in(t, &berlin);
 ```
 
 Instants are milliseconds since the Unix epoch (UTC); the time zone is passed at evaluation, and the default is `Tz::utc()`. Note that you parse **once** (at write/config time) and evaluate **many**; a `Dtrexp` value is immutable after `parse`. `covers` is a single calendar-field extraction followed by integer comparisons; no occurrence iteration.
@@ -58,7 +58,7 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 - `parse(s)` returns the expression or a `ParseError { pos, message }`. Warnings from a clean parse are available via `Dtrexp::warnings()`.
 - `validate(s)` returns `Result<Vec<Warning>, ParseError>`: the warnings on success, or the same `ParseError` when the input does not parse. It carries the same warnings as `Dtrexp::warnings()`.
 - `covers` / `covers_in` take an IANA zone. An identifier that does not resolve is the one runtime failure, `UnknownTimeZone { id, message }`; `covers_in` takes an already-loaded `Tz` and cannot fail.
-- Warnings are the spec's §9.1 unsatisfiability lint — expressions that parse but can never match.
+- Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint — expressions that parse but can never match.
 
 ## Conformance & quality
 
@@ -68,8 +68,9 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 
 ## Related projects
 
-- [**dtrexp** (spec)][spec] — the DTRExp specification (grammar, semantics, conformance vectors) this crate implements.
+- [**dtrexp** (spec)][spec] — the DTRExp specification (grammar, semantics, conformance vectors) this package implements.
 - [**dtrexp-js**][js] — the reference implementation; adds `intersect`, `next`, `describe`, `toRRule` and canonicalization.
+- [**dtrexp-py**][py] · [**dtrexp-go**][go] · [**dtrexp-swift**][swift] · [**dtrexp-java**][java] — the other ports; same core interface.
 
 ## License
 
@@ -77,5 +78,9 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 
 [spec]: https://github.com/DTRExp/dtrexp
 [js]: https://github.com/DTRExp/dtrexp-js
+[py]: https://github.com/DTRExp/dtrexp-py
+[go]: https://github.com/DTRExp/dtrexp-go
+[swift]: https://github.com/DTRExp/dtrexp-swift
+[java]: https://github.com/DTRExp/dtrexp-java
 [vectors]: https://github.com/DTRExp/dtrexp/blob/main/vectors.json
 [vectors-md]: https://github.com/DTRExp/dtrexp/blob/main/VECTORS.md
