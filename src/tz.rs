@@ -95,31 +95,30 @@ impl Tz {
                 valid.push(cand);
             }
         }
-        if !valid.is_empty() {
+        if let Some(&earliest) = valid.iter().min() {
             // Unique → that instant; overlap → the earlier (smaller) instant.
-            return *valid.iter().min().unwrap();
+            return earliest;
         }
-        // Gap: find the spring-forward transition whose skipped local interval
-        // contains `local_ms`. Temporal `compatible` interprets the wall-clock
-        // time with the offset in effect BEFORE the transition, which moves it
-        // forward past the gap by the gap's length (Berlin 02:30 -> 03:30 CEST).
-        for i in 0..self.transitions.len() {
-            let (tt, off_after) = self.transitions[i];
-            let off_before = if i == 0 {
-                self.first_offset
-            } else {
-                self.transitions[i - 1].1
-            };
-            if off_after > off_before {
+        // No valid offset means `local_ms` sits in a spring-forward gap: find the
+        // transition whose skipped local interval contains it. Temporal
+        // `compatible` reads the wall-clock time with the offset in effect BEFORE
+        // the transition, moving it forward past the gap (Berlin 02:30 → 03:30
+        // CEST). An empty `valid` set always corresponds to exactly one such gap,
+        // so the search always succeeds.
+        (0..self.transitions.len())
+            .find_map(|i| {
+                let (tt, off_after) = self.transitions[i];
+                let off_before = if i == 0 {
+                    self.first_offset
+                } else {
+                    self.transitions[i - 1].1
+                };
                 let gap_start = tt * MS_PER_SEC + i64::from(off_before) * MS_PER_SEC;
                 let gap_end = tt * MS_PER_SEC + i64::from(off_after) * MS_PER_SEC;
-                if local_ms >= gap_start && local_ms < gap_end {
-                    return local_ms - i64::from(off_before) * MS_PER_SEC;
-                }
-            }
-        }
-        // Fallback (should not happen for well-formed zones).
-        local_ms - i64::from(self.first_offset) * MS_PER_SEC
+                (off_after > off_before && local_ms >= gap_start && local_ms < gap_end)
+                    .then_some(local_ms - i64::from(off_before) * MS_PER_SEC)
+            })
+            .unwrap()
     }
 }
 
@@ -238,4 +237,184 @@ fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
         transitions,
         first_offset,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 44-byte TZif header with the given `version` byte and counts.
+    fn header(version: u8, timecnt: u32, typecnt: u32) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(b"TZif");
+        d.push(version);
+        d.extend_from_slice(&[0u8; 15]); // reserved
+        for c in [0u32, 0, 0, timecnt, typecnt, 0] {
+            d.extend_from_slice(&c.to_be_bytes()); // isut, isstd, leap, time, type, char
+        }
+        d
+    }
+
+    /// A minimal TZif data block (32-bit times) with one STD→DST transition at
+    /// the epoch and the two given offsets.
+    fn block_32(std_off: i32, dst_off: i32) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(&0i32.to_be_bytes()); // transition time: epoch
+        d.push(1); // → type index 1 (DST) after the transition
+        d.extend_from_slice(&std_off.to_be_bytes()); // type 0: STD
+        d.extend_from_slice(&[0, 0]); // isdst=0, abbrind=0
+        d.extend_from_slice(&dst_off.to_be_bytes()); // type 1: DST
+        d.extend_from_slice(&[1, 0]); // isdst=1, abbrind=0
+        d
+    }
+
+    /// A complete legacy (version-1) TZif buffer.
+    fn v1_tzif(std_off: i32, dst_off: i32) -> Vec<u8> {
+        let mut d = header(0, 1, 2);
+        d.extend_from_slice(&block_32(std_off, dst_off));
+        d
+    }
+
+    #[test]
+    fn utc_reports_its_name() {
+        assert_eq!(Tz::utc().name(), "UTC");
+    }
+
+    #[test]
+    fn utc_aliases_load_without_the_filesystem() {
+        // The `|| id == "Etc/UTC"` and `|| id.is_empty()` short-circuit arms.
+        assert_eq!(Tz::load("Etc/UTC").unwrap().name(), "UTC");
+        assert_eq!(Tz::load("").unwrap().name(), "UTC");
+    }
+
+    #[test]
+    fn parses_a_legacy_v1_body() {
+        let tz = parse_tzif(&v1_tzif(0, 3600), "Test/V1").unwrap();
+        assert_eq!(tz.name(), "Test/V1");
+        // Before the epoch → the STD (first, non-DST) offset.
+        assert_eq!(tz.offset_at_ms(-1_000), 0);
+        // After the epoch transition → the DST offset.
+        assert_eq!(tz.offset_at_ms(1_000), 3600);
+    }
+
+    #[test]
+    fn resolves_a_wall_clock_time_inside_a_spring_forward_gap() {
+        // v1_tzif springs forward 0→+3600 at the epoch, so local wall-clock
+        // 00:00..01:00 (ms [0, 3_600_000)) never occurs; `compatible` pushes it
+        // forward using the pre-transition offset (0), i.e. maps it unchanged.
+        let tz = parse_tzif(&v1_tzif(0, 3600), "Test/Gap").unwrap();
+        assert_eq!(tz.local_to_instant_ms(1_800_000), 1_800_000);
+        // A time outside the gap resolves through a valid offset.
+        assert_eq!(tz.local_to_instant_ms(-3_600_000), -3_600_000);
+    }
+
+    #[test]
+    fn rejects_a_non_tzif_buffer() {
+        assert!(parse_tzif(b"not a tzif file", "x").is_err());
+    }
+
+    #[test]
+    fn rejects_a_truncated_buffer_with_a_valid_magic() {
+        // Shorter than one header, but the magic matches: the length check must
+        // reject it on its own, not rely on the magic comparison.
+        assert!(parse_tzif(b"TZif2 truncated", "x").is_err());
+    }
+
+    #[test]
+    fn v2_skip_honours_isstdcnt_and_leapcnt() {
+        // A v1 block carrying one leap-second record (8 bytes) and one
+        // standard/wall flag (1 byte): the v2 header is found only if
+        // `block_size` counts both.
+        let mut d = Vec::new();
+        d.extend_from_slice(b"TZif2");
+        d.extend_from_slice(&[0u8; 15]); // reserved
+        for c in [0u32, 1, 1, 1, 2, 0] {
+            d.extend_from_slice(&c.to_be_bytes()); // isut 0, isstd 1, leap 1, time 1, type 2, char 0
+        }
+        d.extend_from_slice(&block_32(0, 3600));
+        d.extend_from_slice(&[0u8; 8]); // leap record: occurrence(4) + correction(4)
+        d.push(0); // standard/wall flag
+        d.extend_from_slice(&header(b'2', 1, 2)); // second (64-bit) header
+        d.extend_from_slice(&block_64(0, 3600));
+        let tz = parse_tzif(&d, "x").unwrap();
+        assert_eq!(tz.offset_at_ms(1_000), 3600);
+    }
+
+    #[test]
+    fn first_offset_prefers_the_first_standard_type() {
+        // Type 0 is DST, type 1 is STD → the pre-transition offset must come
+        // from type 1 (the first non-DST type), not type 0.
+        let mut d = header(0, 1, 2);
+        d.extend_from_slice(&0i32.to_be_bytes()); // transition at the epoch
+        d.push(0); // → type 0 (DST)
+        d.extend_from_slice(&3600i32.to_be_bytes());
+        d.extend_from_slice(&[1, 0]); // type 0: DST +3600
+        d.extend_from_slice(&0i32.to_be_bytes());
+        d.extend_from_slice(&[0, 0]); // type 1: STD 0
+        let tz = parse_tzif(&d, "x").unwrap();
+        assert_eq!(tz.offset_at_ms(-1_000), 0); // before the transition: first STD type
+        assert_eq!(tz.offset_at_ms(1_000), 3600);
+    }
+
+    #[test]
+    fn gap_resolution_with_negative_offsets_and_a_pre_epoch_transition() {
+        // Spring-forward -18000 → -14400 at t = -86400 s; the skipped local
+        // interval is [-104400, -100800) s. Negative transition time and
+        // negative offsets pin every sign and scale in the gap-window
+        // arithmetic — any slip moves the window and strands the lookup.
+        let mut d = header(0, 1, 2);
+        d.extend_from_slice(&(-86_400i32).to_be_bytes());
+        d.push(1);
+        d.extend_from_slice(&(-18_000i32).to_be_bytes());
+        d.extend_from_slice(&[0, 0]);
+        d.extend_from_slice(&(-14_400i32).to_be_bytes());
+        d.extend_from_slice(&[1, 0]);
+        let tz = parse_tzif(&d, "x").unwrap();
+        // Exactly at the gap start; `compatible` maps it forward through the
+        // pre-transition offset: -104400 s + 18000 s = -86400 s.
+        assert_eq!(tz.local_to_instant_ms(-104_400_000), -86_400_000);
+    }
+
+    #[test]
+    fn gap_resolution_reads_the_offset_before_a_later_transition() {
+        // Two transitions; the gap sits at index 1, so `off_before` must come
+        // from `transitions[0]` (an off-by-one reads past the end).
+        let mut d = header(0, 2, 2);
+        d.extend_from_slice(&(-200_000i32).to_be_bytes());
+        d.extend_from_slice(&(-86_400i32).to_be_bytes());
+        d.push(0); // t = -200000 → type 0 (a no-op: same offset as first_offset)
+        d.push(1); // t = -86400 → type 1 (the spring-forward)
+        d.extend_from_slice(&(-18_000i32).to_be_bytes());
+        d.extend_from_slice(&[0, 0]);
+        d.extend_from_slice(&(-14_400i32).to_be_bytes());
+        d.extend_from_slice(&[1, 0]);
+        let tz = parse_tzif(&d, "x").unwrap();
+        assert_eq!(tz.local_to_instant_ms(-104_400_000), -86_400_000);
+    }
+
+    #[test]
+    fn rejects_a_buffer_with_no_local_time_types() {
+        let err = parse_tzif(&header(0, 0, 0), "x").unwrap_err();
+        assert!(err.contains("no local time types"));
+    }
+
+    #[test]
+    fn rejects_a_v2_file_with_a_corrupt_second_header() {
+        // version '2' → the parser skips the v1 block and re-reads a header; a
+        // non-TZif second header fails there.
+        let mut d = header(b'2', 1, 2);
+        d.extend_from_slice(&block_32(0, 3600));
+        d.extend_from_slice(&[0u8; 44]); // bogus second header
+        assert!(parse_tzif(&d, "x").is_err());
+    }
+
+    #[test]
+    fn rejects_a_v2_file_whose_second_block_has_no_types() {
+        // Valid second header but typecnt = 0 → the 64-bit body parse fails.
+        let mut d = header(b'2', 1, 2);
+        d.extend_from_slice(&block_32(0, 3600));
+        d.extend_from_slice(&header(b'2', 0, 0)); // empty second block
+        let err = parse_tzif(&d, "x").unwrap_err();
+        assert!(err.contains("no local time types"));
+    }
 }

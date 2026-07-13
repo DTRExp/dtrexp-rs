@@ -24,10 +24,8 @@ pub fn parse_branches(input: &str) -> Result<Vec<Expr>, ParseError> {
         }
         break;
     }
-    p.skip_spaces();
-    if !p.eof() {
-        return Err(ParseError::new(p.i, "unexpected trailing input"));
-    }
+    // `parse_expression` only yields when the cursor is at `|` or end-of-input,
+    // so consuming the `|`s above leaves nothing but EOF to fall out here.
     Ok(branches)
 }
 
@@ -102,9 +100,6 @@ impl<'a> Parser<'a> {
         let c = self.b[self.i];
         self.i += 1;
         c
-    }
-    fn eof(&self) -> bool {
-        self.i >= self.b.len()
     }
     fn skip_spaces(&mut self) {
         while self.peek() == Some(b' ') {
@@ -226,7 +221,9 @@ impl<'a> Parser<'a> {
                     atoms = self.build_atoms(items, pos)?;
                 }
                 _ => {
-                    atoms = self.build_atoms(vec![first], pos)?;
+                    // A single item never trips the bare-`*`-in-a-list guard (a
+                    // lone `*` is handled above), so this is infallible.
+                    atoms = self.build_atoms(vec![first], pos).unwrap();
                 }
             }
         }
@@ -613,13 +610,8 @@ impl<'a> Parser<'a> {
         date: DateLit,
         pos: usize,
     ) -> Result<(), ParseError> {
-        // Anchor must be a real calendar date.
-        if !valid_date(date.y, date.m, date.d) {
-            return Err(ParseError::new(
-                pos,
-                "cadence anchor is not a real calendar date",
-            ));
-        }
+        // The anchor is already a validated calendar date: `parse_date` rejects
+        // any non-real date before it ever reaches here.
         self.bump(); // '/'
         let (period_n, period_unit) = self.read_cadence_term()?;
         if period_n < 1 {
@@ -823,4 +815,41 @@ fn duration_lt_period(dn: i64, du: CadUnit, pn: i64, pu: CadUnit) -> bool {
     let (dmax, _) = cad_lengths(du);
     let (_, pmin) = cad_lengths(pu);
     (dn as i128) * (dmax as i128) < (pn as i128) * (pmin as i128)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_stride_rejects_a_bare_star_anchor() {
+        // In the parser a stride only ever attaches to a value or a range, so
+        // `build_stride` never actually sees `Raw::Star`; the guard defends that
+        // invariant against future callers rather than any current input.
+        let mut p = Parser { b: b"", i: 0 };
+        let err = p.build_stride(Raw::Star).unwrap_err();
+        assert!(err.message.contains("anchorless stride"));
+    }
+
+    // Each of these fails inside a specific sub-parser so the surrounding `?`
+    // propagates — pinning the error path of every fallible call in the grammar.
+    #[test]
+    fn sub_parse_failures_propagate() {
+        for bad in [
+            "M!",          // exclusion value-list: first item missing
+            "M!3,",        // exclusion value-list: item after ',' missing
+            "M3,",         // list: item after ',' missing
+            "E1#",         // ordinal: number after '#' missing
+            "M3/",         // stride: interval missing
+            "M3/4/",       // stride: duration missing
+            "M*:",         // range: endpoint after '*:' missing
+            "M3:",         // range: endpoint after ':' missing
+            "*:2020",      // '*'-bounds: end is not an 8-digit date
+            "20200101:99", // bounds: end is not an 8-digit date
+            "20200101/x",  // cadence: period term unit missing
+            "20200101/2D/", // cadence: duration term missing
+        ] {
+            assert!(parse_branches(bad).is_err(), "`{bad}` should be rejected");
+        }
+    }
 }

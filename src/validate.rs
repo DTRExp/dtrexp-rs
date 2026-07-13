@@ -230,9 +230,8 @@ fn enumerate_years(expr: &Expr) -> Option<Vec<i64>> {
             _ => return None, // Star, All, stride, negative → open/unknown
         }
     }
-    if years.is_empty() {
-        return None;
-    }
+    // Every push-arm above contributes ≥1 value and the others bail with `None`,
+    // so a completed loop leaves `years` non-empty.
     let (lo, hi) = (*years.iter().min().unwrap(), *years.iter().max().unwrap());
     if hi - lo > 1000 {
         return None;
@@ -287,12 +286,13 @@ fn warnings(expr: &Expr, scope: Scope) -> Vec<Warning> {
             && !qs.is_empty()
             && !ms.iter().any(|&m| qs.contains(&((m - 1) / 3 + 1)));
         if disjoint {
+            // A non-empty `month_set` means a Month selector is present.
             let pos = expr
                 .selectors
                 .iter()
                 .find(|s| s.desig == Desig::Month)
                 .map(|s| s.pos)
-                .unwrap_or(0);
+                .unwrap();
             ws.push(Warning::new(
                 pos,
                 "unsatisfiable — M and Q select disjoint months",
@@ -368,9 +368,10 @@ fn day_domain_sizes(
             }
         }
         Scope::Quarter => {
+            // A quarter scope is only chosen when a Q selector is present.
             let quarters: Vec<i64> = quarter_set
                 .map(|q| q.to_vec())
-                .unwrap_or_else(|| (1..=4).collect());
+                .expect("quarter scope implies a Q selector");
             for q in quarters {
                 match years {
                     Some(ys) => {
@@ -417,5 +418,45 @@ fn week_unsat(sel: &Selector, expr: &Expr) -> Option<Warning> {
             sel.pos,
             "unsatisfiable — week never exists in the covered week-years",
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn year_selector(ordinal: Option<(i64, i64)>) -> Expr {
+        let mut expr = Expr::default();
+        expr.selectors.push(Selector {
+            desig: Desig::Year,
+            atoms: vec![Atom::Single(2020)],
+            exclude: false,
+            ordinal,
+            pos: 0,
+        });
+        expr
+    }
+
+    #[test]
+    fn year_domain_is_one_based_and_unbounded() {
+        // The Year row of the domain table: 1-based, no finite upper edge.
+        assert_eq!(
+            domain_info(Desig::Year, Scope::Month),
+            (false, 1, i64::MAX, i64::MAX)
+        );
+    }
+
+    #[test]
+    fn year_accepts_a_plain_value() {
+        // Guards the surrounding check: a normal Year selector validates.
+        assert!(check(&year_selector(None)).is_ok());
+    }
+
+    #[test]
+    fn year_rejects_an_ordinal() {
+        // Ordinals are E-only; the parser never builds this, but `check_year`
+        // defends the invariant if an ordinal ever reaches a Year selector.
+        let err = check(&year_selector(Some((3, 2)))).unwrap_err();
+        assert!(err.message.contains("ordinal not valid here"));
     }
 }

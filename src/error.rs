@@ -78,3 +78,20 @@ impl fmt::Display for UnknownTimeZone {
 }
 
 impl std::error::Error for UnknownTimeZone {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_error_displays_position_and_message() {
+        let e = ParseError::new(7, "bad selector");
+        assert_eq!(e.to_string(), "parse error at 7: bad selector");
+    }
+
+    #[test]
+    fn warning_displays_position_and_message() {
+        let w = Warning::new(3, "unsatisfiable");
+        assert_eq!(w.to_string(), "warning at 3: unsatisfiable");
+    }
+}
