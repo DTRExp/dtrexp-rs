@@ -22,6 +22,25 @@ fn load_rejects_path_traversal_as_invalid_identifier() {
     }
 }
 
+/// The zone database holds plain-text files (`+VERSION`, `zone.tab`, …) beside
+/// the binary zones. Naming one resolves to a readable file that is not TZif —
+/// the parse failure has to surface as the typed error, not a panic.
+#[test]
+fn a_readable_non_tzif_entry_yields_a_parse_error() {
+    let entry = ["+VERSION", "zone.tab", "iso3166.tab", "tzdata.zi"]
+        .into_iter()
+        .find(|id| {
+            ["/var/db/timezone/zoneinfo", "/usr/share/zoneinfo"]
+                .iter()
+                .any(|dir| std::path::Path::new(dir).join(id).is_file())
+        })
+        .expect("the system zone database should hold at least one plain-text entry");
+
+    let err = Tz::load(entry).unwrap_err();
+    assert_eq!(err.id, entry);
+    assert_eq!(err.message, "not a TZif file");
+}
+
 #[test]
 fn covers_propagates_the_typed_error() {
     let expr = parse("M3").unwrap();
