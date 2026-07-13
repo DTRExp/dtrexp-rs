@@ -308,6 +308,29 @@ mod tests {
         assert_eq!(tz.local_to_instant_ms(-3_600_000), -3_600_000);
     }
 
+    /// A minimal TZif data block (64-bit times) with one STD→DST transition at
+    /// the epoch and the two given offsets.
+    fn block_64(std_off: i32, dst_off: i32) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(&0i64.to_be_bytes()); // transition time: epoch
+        d.push(1); // → type index 1 (DST) after the transition
+        d.extend_from_slice(&std_off.to_be_bytes());
+        d.extend_from_slice(&[0, 0]);
+        d.extend_from_slice(&dst_off.to_be_bytes());
+        d.extend_from_slice(&[1, 0]);
+        d
+    }
+
+    #[test]
+    fn big_endian_readers_use_each_byte_position_once() {
+        // Distinct byte values at a nonzero offset: any repeated, shifted, or
+        // dropped index changes the value (or reads out of bounds).
+        let d = [0x99u8, 0x98, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        assert_eq!(be_i32(&d, 2), 0x0102_0304);
+        assert_eq!(be_u32(&d, 2), 0x0102_0304);
+        assert_eq!(be_i64(&d, 2), 0x0102_0304_0506_0708);
+    }
+
     #[test]
     fn rejects_a_non_tzif_buffer() {
         assert!(parse_tzif(b"not a tzif file", "x").is_err());

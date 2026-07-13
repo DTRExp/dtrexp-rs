@@ -201,6 +201,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn add_days_crosses_a_year_boundary() {
+        // Every civil field must be recomputed from the shifted day count —
+        // carrying any of them over from the base date goes stale here.
+        let n = Naive::new(2020, 12, 31, 5, 0, 0, 0).add_days(1);
+        assert_eq!((n.y, n.mo, n.d), (2021, 1, 1));
+    }
+
+    #[test]
     fn leap_year_rule() {
         // The full Gregorian rule: /4 leap, /100 common, /400 leap.
         assert!(is_leap(2000)); // divisible by 400
