@@ -9,6 +9,12 @@ license = "MIT"
 name = "dtrexp"
 path = "src/lib.rs"
 
+[features]
+# Host-supplied time zones: `Tz::from_offset_fn` builds a zone from an offset
+# callback instead of the system TZif database, for hosts without a zoneinfo
+# filesystem (WASM).
+host-tz = []
+
 [dependencies]
 
 [dev-dependencies]
