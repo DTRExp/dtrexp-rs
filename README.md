@@ -9,7 +9,7 @@ E7#-1 M4                 last Sunday of April, every year
 M!7                      every month except July
 ```
 
-Scope: **parsing, validation and coverage evaluation** — the spec's core interface. Rendering, description and RRULE export are out of scope; the [reference implementation][js] has them.
+Scope: **parsing, validation and coverage evaluation** (the spec's core interface). Rendering, description and RRULE export are out of scope; the [reference implementation][js] has them.
 
 ## Install
 
@@ -58,11 +58,11 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 - `parse(s)` returns the expression or a `ParseError { pos, message }`. Warnings from a clean parse are available via `Dtrexp::warnings()`.
 - `validate(s)` returns `Result<Vec<Warning>, ParseError>`: the warnings on success, or the same `ParseError` when the input does not parse. It carries the same warnings as `Dtrexp::warnings()`.
 - `covers` / `covers_in` take an IANA zone. An identifier that does not resolve is the one runtime failure, `UnknownTimeZone { id, message }`; `covers_in` takes an already-loaded `Tz` and cannot fail.
-- Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint — expressions that parse but can never match.
+- Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint: expressions that parse but can never match.
 
 ## Conformance & quality
 
-- The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (draft 2.8), vendored at `tests/vectors.json` — every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
+- The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (draft 2.8), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
 - **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath.
 - Zero dependencies.
 
