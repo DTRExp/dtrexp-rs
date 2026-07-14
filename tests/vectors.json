@@ -807,6 +807,26 @@
       }
     },
     {
+      "id": "cadence-far-horizon-daily",
+      "expression": "95990101/2D",
+      "tz": "UTC",
+      "cases": {
+        "9999-01-01T00:00:00Z": false,
+        "9999-01-02T00:00:00Z": true,
+        "9999-01-03T00:00:00Z": false
+      }
+    },
+    {
+      "id": "cadence-far-horizon-weekly",
+      "expression": "95990101/2W",
+      "tz": "UTC",
+      "cases": {
+        "9999-01-01T00:00:00Z": false,
+        "9999-01-08T00:00:00Z": true,
+        "9999-01-15T00:00:00Z": false
+      }
+    },
+    {
       "id": "stride-year-open-large",
       "expression": "Y2020:*/100",
       "tz": "UTC",
