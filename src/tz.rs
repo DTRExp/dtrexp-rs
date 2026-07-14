@@ -20,6 +20,10 @@ use crate::error::UnknownTimeZone;
 
 /// A parsed time zone: a sorted list of UTC transition instants, each paired
 /// with the offset (seconds east of UTC) that takes effect at that instant.
+///
+/// With the `host-tz` feature, a zone can instead be backed by a host offset
+/// callback ([`Tz::from_offset_fn`]) for environments without a zoneinfo
+/// filesystem (WASM).
 #[derive(Clone, Debug)]
 pub struct Tz {
     name: String,
@@ -27,17 +31,55 @@ pub struct Tz {
     transitions: Vec<(i64, i32)>,
     /// Offset in effect before the first transition.
     first_offset: i32,
+    #[cfg(feature = "host-tz")]
+    host: Option<HostFn>,
+}
+
+/// A host-supplied offset lookup: UTC instant (ms since epoch) → offset
+/// (seconds east of UTC). `Rc` keeps [`Tz`] cloneable; a host-backed zone is
+/// consequently not `Send` — irrelevant on WASM, the feature's audience.
+#[cfg(feature = "host-tz")]
+#[derive(Clone)]
+struct HostFn(std::rc::Rc<dyn Fn(i64) -> i32>);
+
+#[cfg(feature = "host-tz")]
+impl std::fmt::Debug for HostFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("HostFn(..)")
+    }
 }
 
 const ZONEINFO_DIRS: [&str; 2] = ["/var/db/timezone/zoneinfo", "/usr/share/zoneinfo"];
 
 impl Tz {
+    /// A table-backed zone (the UTC and TZif construction paths).
+    fn table(name: String, transitions: Vec<(i64, i32)>, first_offset: i32) -> Tz {
+        Tz {
+            name,
+            transitions,
+            first_offset,
+            #[cfg(feature = "host-tz")]
+            host: None,
+        }
+    }
+
     /// The UTC time zone: fixed zero offset, no transitions.
     pub fn utc() -> Tz {
+        Tz::table("UTC".to_string(), Vec::new(), 0)
+    }
+
+    /// A zone backed by a host offset callback: `f` maps a UTC instant (ms
+    /// since the Unix epoch) to the offset in effect (seconds east of UTC).
+    /// For hosts without a zoneinfo filesystem (WASM), where the embedder owns
+    /// zone data — e.g. via `Intl`. Wall-clock resolution follows Temporal
+    /// `compatible` semantics, derived from `f` alone.
+    #[cfg(feature = "host-tz")]
+    pub fn from_offset_fn(id: &str, f: impl Fn(i64) -> i32 + 'static) -> Tz {
         Tz {
-            name: "UTC".to_string(),
+            name: id.to_string(),
             transitions: Vec::new(),
             first_offset: 0,
+            host: Some(HostFn(std::rc::Rc::new(f))),
         }
     }
 
@@ -67,6 +109,10 @@ impl Tz {
 
     /// UTC offset (seconds) in effect at the given UTC instant (ms since epoch).
     pub fn offset_at_ms(&self, instant_ms: i64) -> i32 {
+        #[cfg(feature = "host-tz")]
+        if let Some(host) = &self.host {
+            return (host.0)(instant_ms);
+        }
         let secs = instant_ms.div_euclid(MS_PER_SEC);
         // Largest transition with time <= secs.
         let idx = self.transitions.partition_point(|&(t, _)| t <= secs);
@@ -81,6 +127,10 @@ impl Tz {
     /// instant (ms), using Temporal `compatible` disambiguation: for a repeated
     /// local time pick the earlier instant; for a gap resolve forward past it.
     pub fn local_to_instant_ms(&self, local_ms: i64) -> i64 {
+        #[cfg(feature = "host-tz")]
+        if self.host.is_some() {
+            return self.local_to_instant_host(local_ms);
+        }
         // Distinct offsets that appear in this zone.
         let mut offsets: Vec<i32> = vec![self.first_offset];
         for &(_, off) in &self.transitions {
@@ -119,6 +169,31 @@ impl Tz {
                     .then_some(local_ms - i64::from(off_before) * MS_PER_SEC)
             })
             .unwrap()
+    }
+
+    /// The host-backed variant of [`Tz::local_to_instant_ms`]: with only an
+    /// offset lookup available (no transition table), the two candidate
+    /// instants come from the offsets in effect a day either side of the
+    /// target. Probing the target itself would be wrong: it is a local
+    /// pseudo-epoch, not an instant, so which candidate it lands on flips with
+    /// the sign of the zone's offset. Mirrors the reference implementation's
+    /// `epochFromLocal`.
+    #[cfg(feature = "host-tz")]
+    fn local_to_instant_host(&self, local_ms: i64) -> i64 {
+        const DAY_MS: i64 = 86_400_000;
+        let off_ms = |t: i64| i64::from(self.offset_at_ms(t)) * MS_PER_SEC;
+        let before = local_ms - off_ms(local_ms - DAY_MS);
+        let after = local_ms - off_ms(local_ms + DAY_MS);
+        let earlier = before.min(after);
+        // A unique local time resolves through its own offset; a repeated one
+        // (fall-back overlap) picks the earlier instant. Otherwise `local_ms`
+        // sits in a spring-forward gap, and `compatible` resolves forward,
+        // which is the later candidate.
+        if earlier + off_ms(earlier) == local_ms {
+            earlier
+        } else {
+            before.max(after)
+        }
     }
 }
 
@@ -232,11 +307,7 @@ fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
     } else {
         parse_body(d, 44, 4, &c1)?
     };
-    Ok(Tz {
-        name: name.to_string(),
-        transitions,
-        first_offset,
-    })
+    Ok(Tz::table(name.to_string(), transitions, first_offset))
 }
 
 #[cfg(test)]
@@ -439,5 +510,72 @@ mod tests {
         d.extend_from_slice(&header(b'2', 0, 0)); // empty second block
         let err = parse_tzif(&d, "x").unwrap_err();
         assert!(err.contains("no local time types"));
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "host-tz")]
+mod host_tests {
+    use super::*;
+
+    /// The host mirror of `v1_tzif(0, 3600)`: a 0 → +3600 spring-forward at
+    /// the epoch.
+    fn spring(t: i64) -> i32 {
+        if t < 0 {
+            0
+        } else {
+            3600
+        }
+    }
+
+    /// A +3600 → 0 fall-back at the epoch.
+    fn fall(t: i64) -> i32 {
+        if t < 0 {
+            3600
+        } else {
+            0
+        }
+    }
+
+    #[test]
+    fn host_zone_reports_its_name_and_dispatches_offsets() {
+        let tz = Tz::from_offset_fn("Host/Step", spring);
+        assert_eq!(tz.name(), "Host/Step");
+        assert_eq!(tz.offset_at_ms(-1_000), 0);
+        assert_eq!(tz.offset_at_ms(1_000), 3600);
+    }
+
+    #[test]
+    fn host_zone_survives_clone_and_names_its_backend_in_debug() {
+        let tz = Tz::from_offset_fn("Host/Step", spring).clone();
+        assert_eq!(tz.offset_at_ms(1_000), 3600);
+        assert!(format!("{tz:?}").contains("HostFn(..)"));
+    }
+
+    #[test]
+    fn host_zone_resolves_a_unique_wall_clock_time_on_each_side() {
+        let tz = Tz::from_offset_fn("Host/Step", spring);
+        // Local 22:00 before the epoch: only offset 0 validates it.
+        assert_eq!(tz.local_to_instant_ms(-7_200_000), -7_200_000);
+        // Local 02:00 after: only offset +3600 validates it.
+        assert_eq!(tz.local_to_instant_ms(7_200_000), 3_600_000);
+    }
+
+    #[test]
+    fn host_zone_resolves_a_gap_forward() {
+        let tz = Tz::from_offset_fn("Host/Gap", spring);
+        // Local 00:30 never occurs (the spring-forward skips it); `compatible`
+        // pushes it forward through the pre-transition offset — the same
+        // mapping the table test pins for this zone shape.
+        assert_eq!(tz.local_to_instant_ms(1_800_000), 1_800_000);
+    }
+
+    #[test]
+    fn host_zone_resolves_a_repeated_time_to_the_earlier_instant() {
+        let tz = Tz::from_offset_fn("Host/Fall", fall);
+        // Local 00:30 occurs twice around the fall-back: as -1_800_000
+        // (through +3600) and 1_800_000 (through 0); `compatible` picks the
+        // earlier.
+        assert_eq!(tz.local_to_instant_ms(1_800_000), -1_800_000);
     }
 }

@@ -8,6 +8,7 @@ The crate itself is zero-dependency. `cargo-llvm-cov` and `cargo-mutants` are de
 
 ```sh
 cargo test                                    # vectors + behavioural + white-box
+cargo test --features host-tz                 # + the host-supplied-zone backend (WASM seam)
 cargo install cargo-llvm-cov cargo-mutants    # one-time (dev tools, not deps)
 cargo llvm-cov --text                         # coverage, merged per line (see below)
 cargo mutants --no-shuffle -j 2               # mutation testing
