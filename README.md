@@ -41,7 +41,7 @@ let ok = dtr.covers_in(t, &berlin);
 
 Instants are milliseconds since the Unix epoch (UTC); the time zone is passed at evaluation, and the default is `Tz::utc()`. Note that you parse **once** (at write/config time) and evaluate **many**; a `Dtrexp` value is immutable after `parse`. `covers` is a single calendar-field extraction followed by integer comparisons; no occurrence iteration.
 
-## Errors and warnings
+## Errors and Warnings
 
 Both a `ParseError` and a `Warning` carry a **position**; the byte offset into the source where the problem was detected.
 
@@ -60,13 +60,13 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 - `covers` / `covers_in` take an IANA zone. An identifier that does not resolve is the one runtime failure, `UnknownTimeZone { id, message }`; `covers_in` takes an already-loaded `Tz` and cannot fail.
 - Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint: expressions that parse but can never match.
 
-## Conformance & quality
+## Conformance & Quality
 
 - The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (draft 2.8), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
 - **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath.
 - Zero dependencies.
 
-## Related projects
+## Related Projects
 
 - [**dtrexp** (spec)][spec] — the DTRExp specification (grammar, semantics, conformance vectors) this package implements.
 - [**dtrexp-js**][js] — the reference implementation; adds `intersect`, `next`, `describe`, `toRRule` and canonicalization.

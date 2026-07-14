@@ -13,7 +13,7 @@ cargo llvm-cov --text                         # coverage, merged per line (see b
 cargo mutants --no-shuffle -j 2               # mutation testing
 ```
 
-## Coverage: 100% of lines and regions, measured honestly
+## Coverage: 100% of Lines and Regions, Measured Honestly
 
 `cargo llvm-cov --text` shows **zero uncovered lines and zero uncovered regions** across `src/`, driven by real behavioural assertions, never line-touching.
 
@@ -26,7 +26,7 @@ A few spots that would otherwise be unreachable defensive code were removed rath
 - The `parse_expression` contract (it only yields at `|` or end-of-input) makes the top-level "trailing input" guard unreachable; it was removed. Likewise the re-validation of a cadence anchor that `parse_date` already validated.
 - Three genuinely-total helpers keep their guarantee expressed as `.unwrap()`/`.expect()` on an infallible result (a single-item value list, a quarter-scoped day domain, a spring-forward gap that provably exists), so the impossible branch lives in `std`, not in this crate.
 
-## Mutation testing
+## Mutation Testing
 
 Full run: **1215 mutants: 1198 caught, 17 equivalent (justified below), 35 unviable, 0 unjustified survivors.**
 
@@ -36,7 +36,7 @@ Unviable mutants are compile errors (`Default::default()` stubs for types withou
 
 Every other mutant changes observable behaviour and is killed by a test. The survivors below are behaviourally equivalent to the original; each carries its proof, because "no test could distinguish it" is a claim that has to be earned per mutant.
 
-### Justified equivalent survivors (17)
+### Justified Equivalent Survivors (17)
 
 cargo-mutants has no inline suppression mechanism, so equivalents are documented here.
 
