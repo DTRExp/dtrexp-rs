@@ -1,3 +1,5 @@
+<p align="center"><img src="./.github/logo.svg" width="200" alt="dtrexp-rs" /></p>
+
 # dtrexp-rs
 
 Rust implementation of **[DTRExp](https://github.com/DTRExp/dtrexp)** (read: "**DTR Expression**") — a compact string expression for date-time ranges and recurrence, evaluated by **coverage** rather than enumeration.
