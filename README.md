@@ -1,4 +1,4 @@
-<p align="center"><img src="./.github/logo.svg" width="200" alt="dtrexp-rs" /></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="./.github/logo-dark.svg"><img src="./.github/logo.svg" width="200" alt="dtrexp-rs" /></picture></p>
 
 # dtrexp-rs
 
