@@ -73,6 +73,7 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 - [**dtrexp** (spec)][spec] — the DTRExp specification (grammar, semantics, conformance vectors) this package implements.
 - [**dtrexp-js**][js] — the reference implementation; adds `intersect`, `next`, `describe`, `toRRule` and canonicalization.
 - [**dtrexp-py**][py] · [**dtrexp-go**][go] · [**dtrexp-swift**][swift] · [**dtrexp-java**][java] — the other ports; same core interface.
+- [**dtrexp-wasm**][wasm] — this crate compiled to WebAssembly for JS hosts.
 
 ## License
 
@@ -86,3 +87,4 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 [java]: https://github.com/DTRExp/dtrexp-java
 [vectors]: https://github.com/DTRExp/dtrexp/blob/main/vectors.json
 [vectors-md]: https://github.com/DTRExp/dtrexp/blob/main/VECTORS.md
+[wasm]: https://github.com/DTRExp/dtrexp-wasm
