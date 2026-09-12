@@ -2,7 +2,7 @@
 name = "dtrexp"
 version = "1.0.0"
 edition = "2021"
-description = "Date-Time Range & Recurrence Expression — a compact coverage-expression language (DTRExp draft 2.8)"
+description = "Date-Time Range & Recurrence Expression — a compact coverage-expression language (DTRExp draft 2.9)"
 license = "MIT"
 repository = "https://github.com/DTRExp/dtrexp-rs"
 readme = "README.md"
