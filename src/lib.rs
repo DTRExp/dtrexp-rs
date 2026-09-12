@@ -1,4 +1,4 @@
-//! DTRExp — Date-Time Range & Recurrence Expression (draft 2.8).
+//! DTRExp — Date-Time Range & Recurrence Expression (draft 2.9).
 //!
 //! A compact string expression denoting a possibly-infinite set of time
 //! intervals, evaluated for **coverage** ("is this instant inside the set?").
