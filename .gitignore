@@ -4,5 +4,9 @@ _notes/
 /mutants.out.old/
 .DS_Store
 
-# Scratch and the latest test reports (coverage, mutation), never committed
+# Scratch, never committed
 _backup/
+
+# The latest test reports (coverage, mutation), never committed
+test/coverage/
+test/mutation/
