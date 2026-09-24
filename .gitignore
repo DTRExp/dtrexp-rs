@@ -3,3 +3,6 @@ _notes/
 /mutants.out/
 /mutants.out.old/
 .DS_Store
+
+# Scratch and the latest test reports (coverage, mutation), never committed
+_backup/
