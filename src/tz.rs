@@ -93,8 +93,12 @@ impl Tz {
         if id.starts_with('/') || id.contains("..") {
             return Err(UnknownTimeZone::new(id, "invalid identifier"));
         }
+        // An IANA name is a normalized path; `./localtime` or `a//b` is not one.
+        if id.split('/').any(|seg| seg.is_empty() || seg == ".") {
+            return Err(UnknownTimeZone::new(id, "invalid identifier"));
+        }
         // Some systems link `localtime` to the host's zone; it is no IANA name.
-        if id == "localtime" {
+        if id.rsplit('/').next() == Some("localtime") {
             return Err(UnknownTimeZone::new(id, "the host's zone is not an IANA identifier"));
         }
         for dir in ZONEINFO_DIRS {

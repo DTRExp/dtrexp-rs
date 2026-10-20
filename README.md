@@ -48,7 +48,7 @@ let ok = hours.covers(t, "UTC").unwrap();    // a zone passed to the call wins
 
 Instants are milliseconds since the Unix epoch (UTC); the time zone is passed at evaluation, and the default is the bound zone, else `Tz::utc()`. Note that you parse **once** (at write/config time) and evaluate **many**; a `Dtrexp` value is immutable after `parse`. `covers` is a single calendar-field extraction followed by integer comparisons; no occurrence iteration.
 
-**Which to use:** bind the zone with `with_zone()` when it belongs to what the expression describes (a store's hours, a venue's schedule), and pass it per call when it belongs to whoever is asking (a rule shown to each user in their own zone). A bound copy loads its zone once, at bind; a cache of parsed expressions keys on the source string and the zone together.
+**Which to use:** bind the zone with `with_zone()` when it belongs to what the expression describes (a store's hours, a venue's schedule), and pass it per call when it belongs to whoever is asking (a rule shown to each user in their own zone). A bound copy loads its zone once, at bind (under the `host-tz` feature it keeps only the name and loads it per call); a cache of parsed expressions keys on the source string and the zone together.
 
 ## Errors and Warnings
 
@@ -66,7 +66,7 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 
 - `parse(s)` returns the expression or a `ParseError { pos, message }`. Warnings from a clean parse are available via `Dtrexp::warnings()`.
 - `validate(s)` returns `Result<Vec<Warning>, ParseError>`: the warnings on success, or the same `ParseError` when the input does not parse. It carries the same warnings as `Dtrexp::warnings()`.
-- `with_zone(tz_id)` returns a copy whose evaluation defaults to `tz_id`, readable as `zone()` (`None` when unbound); the original is left as it is, and the copy's warnings are the same, since the zone belongs to evaluation, never to the expression. The zone is loaded once, at bind, so an unknown identifier fails there with `UnknownTimeZone`; so does an empty one, because binding is explicit and never quietly means UTC.
+- `with_zone(tz_id)` returns a copy whose evaluation defaults to `tz_id`, readable as `zone()` (`None` when unbound); the original is left as it is, and the copy's warnings are the same, since the zone belongs to evaluation, never to the expression. The zone is loaded once, at bind, so an unknown identifier fails there (under `host-tz` it is checked at bind and loaded again per call, from the zoneinfo filesystem; where there is none, as on WASM, evaluate a host-backed `Tz` with `covers_in` instead) with `UnknownTimeZone`; so does an empty one, because binding is explicit and never quietly means UTC.
 - `covers` / `covers_in` take an IANA zone; on `covers`, an empty identifier means the bound zone, else UTC, and any other identifier (`"UTC"` included) wins over the bound zone. `covers_in`'s zone always wins. An identifier that does not resolve is the one runtime failure, `UnknownTimeZone { id, message }`; `covers_in` takes an already-loaded `Tz` and cannot fail.
 - Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint: expressions that parse but can never match.
 

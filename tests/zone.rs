@@ -109,6 +109,29 @@ fn refuses_localtime_in_a_call_too() {
 }
 
 #[test]
+fn refuses_a_path_that_reaches_localtime() {
+    let dtr = parse("T0900:1800").unwrap();
+    for id in [
+        "./localtime",
+        "Europe/./Berlin",
+        "Europe//Berlin",
+        "Europe/",
+    ] {
+        assert_eq!(
+            dtr.with_zone(id).unwrap_err(),
+            UnknownTimeZone::new(id, "invalid identifier")
+        );
+    }
+    assert_eq!(
+        dtr.with_zone("posix/localtime").unwrap_err(),
+        UnknownTimeZone::new(
+            "posix/localtime",
+            "the host's zone is not an IANA identifier"
+        )
+    );
+}
+
+#[test]
 fn stays_send_and_sync() {
     fn shareable<T: Send + Sync>() {}
     shareable::<dtrexp::Dtrexp>();

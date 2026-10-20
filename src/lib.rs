@@ -42,6 +42,8 @@ pub struct Dtrexp {
 /// the zone it loaded to at bind time. Under `host-tz` a [`Tz`] is not `Send`,
 /// so the binding keeps only the name and loads it per call, as
 /// [`Dtrexp::covers`] does for a name passed to it; `Dtrexp` stays `Send + Sync`.
+/// Either way the zone comes from the zoneinfo filesystem: without one (WASM),
+/// bind nothing and pass a host-backed [`Tz`] to [`Dtrexp::covers_in`].
 #[derive(Clone, Debug)]
 struct Bound {
     name: String,
