@@ -1,6 +1,6 @@
 # Testing
 
-The crate is tested at three levels: the conformance vectors (`tests/vectors.json`, the behavioral contract), behavioural tests for everything the vectors don't reach (`tests/coverage.rs`, `tests/boundaries.rs`, `tests/tz_error.rs`, and per-module `#[cfg(test)]` white-box units), and mutation testing with [cargo-mutants](https://github.com/sourcefrog/cargo-mutants).
+The crate is tested at three levels: the conformance vectors (`tests/vectors.json`, the behavioral contract), behavioural tests for everything the vectors don't reach (`tests/coverage.rs`, `tests/boundaries.rs`, `tests/tz_error.rs`, `tests/zone.rs`, and per-module `#[cfg(test)]` white-box units), and mutation testing with [cargo-mutants](https://github.com/sourcefrog/cargo-mutants).
 
 The crate itself is zero-dependency. `cargo-llvm-cov` and `cargo-mutants` are developer tools, installed on the machine, never in `Cargo.toml`.
 
