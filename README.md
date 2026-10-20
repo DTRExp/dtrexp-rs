@@ -19,7 +19,7 @@ Scope: **parsing, validation and coverage evaluation** (the spec's core interfac
 cargo add dtrexp
 ```
 
-Rust 2021 edition. No dependencies, including the zone handling; IANA zones are read straight from the system TZif database.
+Rust 2021 edition. No dependencies, including the zone handling; IANA zones are read straight from the system zoneinfo folder (`/var/db/timezone/zoneinfo` on macOS, else `/usr/share/zoneinfo`), and slim and fat zone files read alike.
 
 ## Usage
 
@@ -50,6 +50,29 @@ Instants are milliseconds since the Unix epoch (UTC); the time zone is passed at
 
 **Which to use:** bind the zone with `with_zone()` when it belongs to what the expression describes (a store's hours, a venue's schedule), and pass it per call when it belongs to whoever is asking (a rule shown to each user in their own zone). A bound copy loads its zone once, at bind (under the `host-tz` feature it keeps only the name and loads it per call); a cache of parsed expressions keys on the source string and the zone together.
 
+## Host-Supplied Zones
+
+Where there is no zoneinfo folder to read, as on WebAssembly, the `host-tz` feature lets the embedder supply the zone instead:
+
+```toml
+[dependencies]
+dtrexp = { version = "1", features = ["host-tz"] }
+```
+
+`Tz::from_offset_fn(id, f)` builds a zone from a callback; `f` maps a UTC instant (ms since the Unix epoch) to the offset in effect there, in seconds east of UTC. In a JS host that is usually answered through `Intl`. Evaluate with `covers_in`:
+
+```rust
+use dtrexp::{parse, Tz};
+
+let tz = Tz::from_offset_fn("Host/Plus2", |_ms| 7_200);   // a fixed +02:00 zone
+let dtr = parse("T0900:1800 E1:5").unwrap();
+
+let ok = dtr.covers_in(1_783_411_200_000, &tz);
+// —> true; 2026-07-07 08:00Z is 10:00 on a Tuesday there.
+```
+
+Wall-clock times resolve as they do for a loaded zone; a skipped time moves forward past the gap, and a repeated one takes the earlier instant. Both come from `f` alone. A host-backed `Tz` is not `Send`; `Dtrexp` stays `Send` and `Sync`, because under this feature a zone bound with `with_zone` keeps only its name and is loaded per call. [dtrexp-wasm][wasm] is built on this feature.
+
 ## Errors and Warnings
 
 Both a `ParseError` and a `Warning` carry a **position**; the byte offset into the source where the problem was detected.
@@ -73,7 +96,7 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 ## Conformance & Quality
 
 - The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (the draft 2.8 file; draft 2.9 left the Core vectors unchanged), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
-- **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath.
+- **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath. A zone file's transitions answer up to the last one it lists, and its POSIX TZ string footer answers after that, so a slim file (the zic default since 2020) and a fat one give the same offsets, and dates past 2037 follow the zone's current rules.
 - Zero dependencies.
 
 ## Related Projects
