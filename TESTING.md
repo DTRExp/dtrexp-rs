@@ -14,6 +14,10 @@ cargo llvm-cov --text                         # coverage, merged per line (see b
 cargo mutants --no-shuffle -j 2               # mutation testing
 ```
 
+## Zone Fixtures
+
+The zone tests never read the host's zoneinfo, which may be slim or fat. They read TZif files built with `zic` into `tests/fixtures/`: Berlin both slim and fat, slim Sydney, Santiago, Nuuk (a version-3 file with a negative rule time) and Riyadh (a footer with no DST), all from the 2026c `tzdata.zi` (`zic -b slim -d out tzdata.zi`, and `-b fat` for the fat Berlin), plus `berlin-rules-only.tzif` from `berlin-rules-only.zi` beside it. Footer rules no real zone uses (`Jn`, plain `n`, spills over a year's edge, zero-length and permanent DST) are tested on synthetic TZ strings in `src/tz/footer.rs`.
+
 ## Coverage: 100% of Lines and Regions, Measured Honestly
 
 `cargo llvm-cov --text` shows **zero uncovered lines and zero uncovered regions** across `src/`, driven by real behavioural assertions, never line-touching.
@@ -29,17 +33,17 @@ A few spots that would otherwise be unreachable defensive code were removed rath
 
 ## Mutation Testing
 
-Full run: **1215 mutants: 1198 caught, 17 equivalent (justified below), 35 unviable, 0 unjustified survivors.**
+Full run: **1359 mutants: 1305 caught, 15 equivalent (justified below), 39 unviable, 0 unjustified survivors.**
 
-Run over `src/lib.rs` and `src/tz.rs` after `with_zone` (2026-10-21), in both builds since cargo-mutants mutates `cfg`-gated code whatever the features (each build misses only the other build's code): the default build and `--features host-tz` together catch every mutant but the four `tz.rs:176` equivalents below (`cargo mutants -f src/lib.rs -f src/tz.rs`, then again with `--features host-tz`).
+Run over `src/tz.rs` and `src/tz/footer.rs` after the TZ string footer (2026-10-21; 348 of the 1359), in both builds since cargo-mutants mutates `cfg`-gated code whatever the features (each build misses only the other build's code): the default build and `--features host-tz` together catch every mutant but the two `tz.rs:202` equivalents below (`cargo mutants -f src/tz.rs -f src/tz/footer.rs`, then again with `--features host-tz`). The rest of the crate is as of the run after `with_zone`.
 
-Eight of the caught are timeout kills: non-termination mutants (`skip_spaces` looping forever, parser stubs that never consume input, a deleted match arm that sends a domain scan to `i64::MAX`). A suite that can never pass has detected the mutant; timeouts count as kills, as cargo-mutants and Stryker both classify them.
+Nine of the caught are timeout kills: non-termination mutants (`skip_spaces` looping forever, parser stubs that never consume input, a deleted match arm that sends a domain scan to `i64::MAX`, a footer cursor whose position never advances). A suite that can never pass has detected the mutant; timeouts count as kills, as cargo-mutants and Stryker both classify them.
 
 Unviable mutants are compile errors (`Default::default()` stubs for types without `Default`): nothing behavioural to test.
 
 Every other mutant changes observable behaviour and is killed by a test. The survivors below are behaviourally equivalent to the original; each carries its proof, because "no test could distinguish it" is a claim that has to be earned per mutant.
 
-### Justified Equivalent Survivors (17)
+### Justified Equivalent Survivors (15)
 
 cargo-mutants has no inline suppression mechanism, so equivalents are documented here.
 
@@ -50,10 +54,8 @@ cargo-mutants has no inline suppression mechanism, so equivalents are documented
 | `eval.rs:261` | scan high bound `k_est + 2` → `k_est * 2` | Same bound: a shrunken high end (only at `k_est < 2`) would need a true `k > k_est`, impossible by `k ≤ k_est`. |
 | `parser.rs:120` | `n += 1` → `-=` | `n`'s only read is `n == 0` (empty-expression check); zero iterations leave 0 either way, one or more leave nonzero either way. |
 | `parser.rs:416` | T-range `wrap: start > end` → `>=` | Equal endpoints are rejected two lines earlier ("covers nothing"); the operators agree on everything else. |
-| `tz.rs:176` | gap `off_after > off_before` → `>=` | The extra matches are no-op transitions, whose gap window `[x, x)` contains no instant. |
-| `tz.rs:176` | gap `local < gap_end` → `<=` | At `local == gap_end` the candidate `local − off_after` is exactly the transition instant, whose offset lookup (inclusive) validates it; such an input resolves on the valid-offset path and never reaches the gap search. |
-| `tz.rs:176` | first `&&` → `\|\|` | The gap search runs only when no offset validates the input. Divergence needs `local` below a spring-forward window at some index while inside a later gap; validity-emptiness forces `local` below the previous transition's window too, and the descent bottoms out at index 0, where "below the window" means the (unbounded-below) first-offset strip validates `local`, contradicting that the search ran. |
-| `tz.rs:176` | second `&&` → `\|\|` | The mutant would return at the first index with `local < gap_end` alone; minimality of that index plus validity-emptiness squeezes `local` into the very offset strip between the previous window's end and this window, making it valid; same contradiction. |
+| `tz.rs:202` | gap `off_after > off_before` → `>=` | The extra matches are no-op transitions, whose gap window `[x, x)` contains no instant. |
+| `tz.rs:202` | gap `local < gap_end` → `<=` | At `local == gap_end` the candidate `local − off_after` is exactly the transition instant, whose offset lookup (inclusive) validates it; such an input resolves on the valid-offset path and never reaches the gap search. For the last transition the lookup at that instant is the footer's, which RFC 8536 §3.3 requires to agree with the last transition's type, so the argument holds for every file that standard accepts. |
 | `validate.rs:219` | `Single(v) if v > 0` → `if true` | `check_year` rejects `v ≤ 0` before warnings run; the guard is already always true on reachable input. |
 | `validate.rs:219` | `v > 0` → `>=` | Differs only at `v == 0`, rejected by the year-domain check ("year out of domain") first. |
 | `validate.rs:224` | range guard → `true` | Non-positive endpoints and descending (wrap) ranges are rejected by `check_year` before warnings; every reaching range already has `a > 0 ∧ b ≥ a`. |

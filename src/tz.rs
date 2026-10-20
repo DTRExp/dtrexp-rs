@@ -9,17 +9,25 @@
 //!    `compatible` disambiguation (used only for `H`/`m`-period cadence anchors,
 //!    §9.3).
 //!
+//! A zone file's transition table answers up to its last transition; the TZ
+//! string footer of a v2+ file answers after it ([`footer`]), so slim and fat
+//! files read alike.
+//!
 //! `UTC` is handled without touching the filesystem so evaluation always works
 //! for the default zone.
+
+mod footer;
 
 use std::fs;
 use std::path::PathBuf;
 
 use crate::civil::MS_PER_SEC;
 use crate::error::UnknownTimeZone;
+use footer::Footer;
 
 /// A parsed time zone: a sorted list of UTC transition instants, each paired
-/// with the offset (seconds east of UTC) that takes effect at that instant.
+/// with the offset (seconds east of UTC) that takes effect at that instant,
+/// and the footer rule that takes over after the last one.
 ///
 /// With the `host-tz` feature, a zone can instead be backed by a host offset
 /// callback ([`Tz::from_offset_fn`]) for environments without a zoneinfo
@@ -31,6 +39,9 @@ pub struct Tz {
     transitions: Vec<(i64, i32)>,
     /// Offset in effect before the first transition.
     first_offset: i32,
+    /// The TZ string rule in effect from the last transition on (or always,
+    /// with no transitions); without one, the last transition's offset holds.
+    footer: Option<Footer>,
     #[cfg(feature = "host-tz")]
     host: Option<HostFn>,
 }
@@ -53,11 +64,17 @@ const ZONEINFO_DIRS: [&str; 2] = ["/var/db/timezone/zoneinfo", "/usr/share/zonei
 
 impl Tz {
     /// A table-backed zone (the UTC and TZif construction paths).
-    fn table(name: String, transitions: Vec<(i64, i32)>, first_offset: i32) -> Tz {
+    fn table(
+        name: String,
+        transitions: Vec<(i64, i32)>,
+        first_offset: i32,
+        footer: Option<Footer>,
+    ) -> Tz {
         Tz {
             name,
             transitions,
             first_offset,
+            footer,
             #[cfg(feature = "host-tz")]
             host: None,
         }
@@ -65,7 +82,7 @@ impl Tz {
 
     /// The UTC time zone: fixed zero offset, no transitions.
     pub fn utc() -> Tz {
-        Tz::table("UTC".to_string(), Vec::new(), 0)
+        Tz::table("UTC".to_string(), Vec::new(), 0, None)
     }
 
     /// A zone backed by a host offset callback: `f` maps a UTC instant (ms
@@ -79,6 +96,7 @@ impl Tz {
             name: id.to_string(),
             transitions: Vec::new(),
             first_offset: 0,
+            footer: None,
             host: Some(HostFn(std::rc::Rc::new(f))),
         }
     }
@@ -130,10 +148,10 @@ impl Tz {
         let secs = instant_ms.div_euclid(MS_PER_SEC);
         // Largest transition with time <= secs.
         let idx = self.transitions.partition_point(|&(t, _)| t <= secs);
-        if idx == 0 {
-            self.first_offset
-        } else {
-            self.transitions[idx - 1].1
+        match &self.footer {
+            Some(footer) if idx == self.transitions.len() => footer.offset_at(secs),
+            _ if idx == 0 => self.first_offset,
+            _ => self.transitions[idx - 1].1,
         }
     }
 
@@ -147,7 +165,8 @@ impl Tz {
         }
         // Distinct offsets that appear in this zone.
         let mut offsets: Vec<i32> = vec![self.first_offset];
-        for &(_, off) in &self.transitions {
+        let table = self.transitions.iter().map(|&(_, off)| off);
+        for off in table.chain(self.footer.iter().flat_map(Footer::offsets)) {
             if !offsets.contains(&off) {
                 offsets.push(off);
             }
@@ -167,8 +186,9 @@ impl Tz {
         // transition whose skipped local interval contains it. Temporal
         // `compatible` reads the wall-clock time with the offset in effect BEFORE
         // the transition, moving it forward past the gap (Berlin 02:30 → 03:30
-        // CEST). An empty `valid` set always corresponds to exactly one such gap,
-        // so the search always succeeds.
+        // CEST). An empty `valid` set always corresponds to exactly one such gap:
+        // a listed transition's, or else one the footer makes, where the offset
+        // before is the lower of its two; so the search always succeeds.
         (0..self.transitions.len())
             .find_map(|i| {
                 let (tt, off_after) = self.transitions[i];
@@ -181,6 +201,10 @@ impl Tz {
                 let gap_end = tt * MS_PER_SEC + i64::from(off_after) * MS_PER_SEC;
                 (off_after > off_before && local_ms >= gap_start && local_ms < gap_end)
                     .then_some(local_ms - i64::from(off_before) * MS_PER_SEC)
+            })
+            .or_else(|| {
+                let footer = self.footer.as_ref();
+                footer.map(|f| local_ms - i64::from(f.gap_offset()) * MS_PER_SEC)
             })
             .unwrap()
     }
@@ -273,6 +297,9 @@ fn parse_body(
     time_size: usize,
     c: &Counts,
 ) -> Result<(Vec<(i64, i32)>, i32), String> {
+    if d.len() < start + block_size(c, time_size, time_size) {
+        return Err("truncated TZif file".to_string());
+    }
     let mut p = start;
     let mut times: Vec<i64> = Vec::with_capacity(c.timecnt);
     for _ in 0..c.timecnt {
@@ -312,16 +339,24 @@ fn parse_body(
 fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
     let c1 = read_counts(d, 0)?;
     let version = d[4];
-    let (transitions, first_offset) = if version == b'2' || version == b'3' {
-        // Skip the 32-bit v1 block, then parse the 64-bit v2/v3 block.
+    if version == b'2' || version == b'3' {
+        // Skip the 32-bit v1 block, then parse the 64-bit v2/v3 block and the
+        // TZ string footer after it.
         let v1_body = 44 + block_size(&c1, 4, 4);
         let c2 = read_counts(d, v1_body)?;
         let v2_body_start = v1_body + 44;
-        parse_body(d, v2_body_start, 8, &c2)?
+        let (transitions, first_offset) = parse_body(d, v2_body_start, 8, &c2)?;
+        let footer = footer::read(&d[v2_body_start + block_size(&c2, 8, 8)..])?;
+        Ok(Tz::table(
+            name.to_string(),
+            transitions,
+            first_offset,
+            footer,
+        ))
     } else {
-        parse_body(d, 44, 4, &c1)?
-    };
-    Ok(Tz::table(name.to_string(), transitions, first_offset))
+        let (transitions, first_offset) = parse_body(d, 44, 4, &c1)?;
+        Ok(Tz::table(name.to_string(), transitions, first_offset, None))
+    }
 }
 
 #[cfg(test)]
@@ -358,6 +393,191 @@ mod tests {
         let mut d = header(0, 1, 2);
         d.extend_from_slice(&block_32(std_off, dst_off));
         d
+    }
+
+    /// Europe/Berlin built with `zic -b slim`: transitions stop in 1996 and
+    /// the footer `CET-1CEST,M3.5.0,M10.5.0/3` carries every later year.
+    const BERLIN_SLIM: &[u8] = include_bytes!("../tests/fixtures/berlin-slim.tzif");
+
+    #[test]
+    fn a_slim_zone_reads_current_years_from_its_footer() {
+        let tz = parse_tzif(BERLIN_SLIM, "Europe/Berlin").unwrap();
+        // 2026-01-15T12:00:00Z: CET.
+        assert_eq!(tz.offset_at_ms(1_768_478_400_000), 3600);
+        // 2026-07-07T07:30:00Z: CEST, so 09:30 local.
+        assert_eq!(tz.offset_at_ms(1_783_409_400_000), 7200);
+    }
+
+    /// The same zone built with `zic -b fat`: transitions listed to 2037.
+    const BERLIN_FAT: &[u8] = include_bytes!("../tests/fixtures/berlin-fat.tzif");
+    /// `tests/fixtures/berlin-rules-only.zi` built with `zic -b slim`: one
+    /// transition (1981, to CEST), then the footer for everything after.
+    const BERLIN_RULES: &[u8] = include_bytes!("../tests/fixtures/berlin-rules-only.tzif");
+    const SYDNEY_SLIM: &[u8] = include_bytes!("../tests/fixtures/sydney-slim.tzif");
+    const SANTIAGO_SLIM: &[u8] = include_bytes!("../tests/fixtures/santiago-slim.tzif");
+    const NUUK_SLIM: &[u8] = include_bytes!("../tests/fixtures/nuuk-slim.tzif");
+    const RIYADH_SLIM: &[u8] = include_bytes!("../tests/fixtures/riyadh-slim.tzif");
+
+    /// A v2 file with no transitions, one UTC type, and the given footer.
+    fn v2_footer_only(footer: &[u8]) -> Vec<u8> {
+        let mut d = header(b'2', 0, 0); // the v1 block, skipped
+        d.extend_from_slice(&header(b'2', 0, 1));
+        d.extend_from_slice(&0i32.to_be_bytes());
+        d.extend_from_slice(&[0, 0]); // type 0: UTC, standard
+        d.extend_from_slice(footer);
+        d
+    }
+
+    /// Assert the offset flips from `before` to `after` exactly at `t_ms`.
+    fn flips(tz: &Tz, t_ms: i64, before: i32, after: i32) {
+        assert_eq!(tz.offset_at_ms(t_ms - 1), before, "just before {t_ms}");
+        assert_eq!(tz.offset_at_ms(t_ms), after, "at {t_ms}");
+    }
+
+    #[test]
+    fn a_slim_zone_agrees_with_its_fat_build() {
+        let slim = parse_tzif(BERLIN_SLIM, "Europe/Berlin").unwrap();
+        let fat = parse_tzif(BERLIN_FAT, "Europe/Berlin").unwrap();
+        for tz in [&slim, &fat] {
+            // 1975 kept no summer time; the footer alone would say CEST.
+            assert_eq!(tz.offset_at_ms(173_448_000_000), 3600);
+            // 1945-05-24 02:30 never occurs (CEST → CEMT at 00:00Z): forward
+            // through CEST to 00:30Z, not through the footer's CET.
+            assert_eq!(tz.local_to_instant_ms(-776_554_200_000), -776_561_400_000);
+        }
+        // Every 7h13m from 1970 through 2037, where the fat file lists all.
+        let step = (7 * 60 + 13) * 60_000;
+        let mut t: i64 = 0;
+        while t < 2_145_916_800_000 {
+            assert_eq!(slim.offset_at_ms(t), fat.offset_at_ms(t), "offset at {t}");
+            assert_eq!(
+                slim.local_to_instant_ms(t),
+                fat.local_to_instant_ms(t),
+                "wall clock {t}"
+            );
+            t += step;
+        }
+    }
+
+    #[test]
+    fn a_slim_zone_resolves_the_gap_and_the_overlap_through_its_footer() {
+        let tz = parse_tzif(BERLIN_SLIM, "Europe/Berlin").unwrap();
+        flips(&tz, 1_774_746_000_000, 3600, 7200); // 2026-03-29T01:00Z
+        flips(&tz, 1_792_890_000_000, 7200, 3600); // 2026-10-25T01:00Z
+                                                   // 2026-03-29 02:30 never occurs: forward to 03:30 CEST, 01:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_774_751_400_000), 1_774_747_800_000);
+        // 2026-10-25 02:30 occurs twice: the earlier, CEST, 00:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_792_895_400_000), 1_792_888_200_000);
+    }
+
+    #[test]
+    fn a_rules_only_zone_takes_both_offsets_from_its_footer() {
+        // The table lists only CEST; winter wall-clock times resolve through
+        // the footer's CET.
+        let tz = parse_tzif(BERLIN_RULES, "Test/Berlin").unwrap();
+        assert_eq!(tz.offset_at_ms(1_768_478_400_000), 3600); // 2026-01-15T12:00Z
+        assert_eq!(tz.offset_at_ms(1_783_409_400_000), 7200); // 2026-07-07T07:30Z
+                                                              // 2026-01-15 12:00 local is 11:00Z.
+        assert_eq!(tz.local_to_instant_ms(1_768_478_400_000), 1_768_474_800_000);
+        assert_eq!(tz.local_to_instant_ms(1_774_751_400_000), 1_774_747_800_000);
+        assert_eq!(tz.local_to_instant_ms(1_792_895_400_000), 1_792_888_200_000);
+    }
+
+    #[test]
+    fn a_southern_slim_zone_keeps_dst_over_the_year_end() {
+        let tz = parse_tzif(SYDNEY_SLIM, "Australia/Sydney").unwrap();
+        assert_eq!(tz.offset_at_ms(1_768_435_200_000), 39_600); // 2026-01-15: AEDT
+        assert_eq!(tz.offset_at_ms(1_784_073_600_000), 36_000); // 2026-07-15: AEST
+        flips(&tz, 1_775_318_400_000, 39_600, 36_000); // 2026-04-04T16:00Z
+        flips(&tz, 1_791_043_200_000, 36_000, 39_600); // 2026-10-03T16:00Z
+                                                       // 2026-10-04 02:30 never occurs: forward to 03:30 AEDT, 10-03T16:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_791_081_000_000), 1_791_045_000_000);
+        // 2026-04-05 02:30 occurs twice: the earlier, AEDT, 04-04T15:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_775_356_200_000), 1_775_316_600_000);
+    }
+
+    #[test]
+    fn slim_zones_with_24_hour_and_negative_rule_times() {
+        // Santiago: `<-04>4<-03>,M9.1.6/24,M4.1.6/24`.
+        let tz = parse_tzif(SANTIAGO_SLIM, "America/Santiago").unwrap();
+        assert_eq!(tz.offset_at_ms(1_768_435_200_000), -10_800);
+        assert_eq!(tz.offset_at_ms(1_784_073_600_000), -14_400);
+        flips(&tz, 1_775_358_000_000, -10_800, -14_400); // 2026-04-05T03:00Z
+        flips(&tz, 1_788_667_200_000, -14_400, -10_800); // 2026-09-06T04:00Z
+                                                         // Nuuk: `<-02>2<-01>,M3.5.0/-1,M10.5.0/0`, a version-3 file.
+        let tz = parse_tzif(NUUK_SLIM, "America/Nuuk").unwrap();
+        flips(&tz, 1_774_746_000_000, -7200, -3600); // 2026-03-29T01:00Z
+        flips(&tz, 1_792_890_000_000, -3600, -7200); // 2026-10-25T01:00Z
+    }
+
+    #[test]
+    fn a_std_only_footer_holds_after_the_last_transition() {
+        // Riyadh: one transition (1947, to +03), then `<+03>-3`.
+        let tz = parse_tzif(RIYADH_SLIM, "Asia/Riyadh").unwrap();
+        assert_eq!(tz.offset_at_ms(1_783_409_400_000), 10_800);
+        assert_eq!(tz.local_to_instant_ms(1_783_409_400_000), 1_783_398_600_000);
+    }
+
+    #[test]
+    fn a_fat_zone_follows_its_footer_past_2037() {
+        let tz = parse_tzif(BERLIN_FAT, "Europe/Berlin").unwrap();
+        assert_eq!(tz.offset_at_ms(4_103_697_600_000), 3600); // 2100-01-15T12:00Z
+        assert_eq!(tz.offset_at_ms(4_118_628_600_000), 7200); // 2100-07-07T07:30Z
+                                                              // 2100-03-28 02:30 never occurs: 01:30Z; 2100-10-31 02:30 repeats: 00:30Z.
+        assert_eq!(tz.local_to_instant_ms(4_109_884_200_000), 4_109_880_600_000);
+        assert_eq!(tz.local_to_instant_ms(4_128_633_000_000), 4_128_625_800_000);
+    }
+
+    #[test]
+    fn a_file_with_no_transitions_answers_from_its_footer() {
+        // On at J60 (March 1) 02:00 at +1, off at day 300 (October 28) 02:00 at +2.
+        let tz = parse_tzif(&v2_footer_only(b"\n<+01>-1<+02>,J60,300\n"), "x").unwrap();
+        flips(&tz, 1_772_326_800_000, 3600, 7200); // 2026-03-01T01:00Z
+        flips(&tz, 1_793_145_600_000, 7200, 3600); // 2026-10-28T00:00Z
+                                                   // The gap: 2026-03-01 02:30 local is 01:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_772_332_200_000), 1_772_328_600_000);
+    }
+
+    #[test]
+    fn a_negative_dst_footer_resolves_its_gap_from_the_lower_offset() {
+        // Dublin's legal form: IST +1 is standard, GMT the winter "dst".
+        let tz = parse_tzif(&v2_footer_only(b"\nIST-1GMT0,M10.5.0,M3.5.0/1\n"), "x").unwrap();
+        // 2026-03-29 01:30 local never occurs: forward to 02:30 IST, 01:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_774_747_800_000), 1_774_747_800_000);
+        // 2026-10-25 01:30 local repeats: the earlier, IST, 00:30Z.
+        assert_eq!(tz.local_to_instant_ms(1_792_891_800_000), 1_792_888_200_000);
+    }
+
+    #[test]
+    fn an_empty_footer_keeps_the_last_transition() {
+        let tz = parse_tzif(&v2_footer_only(b"\n\n"), "x").unwrap();
+        assert_eq!(tz.offset_at_ms(1_783_409_400_000), 0);
+    }
+
+    #[test]
+    fn a_malformed_footer_is_an_error() {
+        for footer in [
+            &b""[..],
+            b"\n",
+            b"\nCET-1CEST,M3.5.0,M10.5.0/3",
+            b"CET-1CEST,M3.5.0,M10.5.0/3\n",
+            b"\nCET-1CEST,M3.5.0\n",
+            b"\nCET-1CEST,M3.5.0,M10.5.0/3\n\n",
+            b"\n\xff\xfe\n",
+        ] {
+            let err = parse_tzif(&v2_footer_only(footer), "x").unwrap_err();
+            assert_eq!(err, "malformed TZ string footer");
+        }
+    }
+
+    #[test]
+    fn rejects_a_truncated_body() {
+        let mut d = v1_tzif(0, 3600);
+        d.pop();
+        assert_eq!(parse_tzif(&d, "x").unwrap_err(), "truncated TZif file");
+        let mut d = BERLIN_SLIM.to_vec();
+        d.truncate(d.len() - 40);
+        assert_eq!(parse_tzif(&d, "x").unwrap_err(), "truncated TZif file");
     }
 
     #[test]
@@ -444,6 +664,7 @@ mod tests {
         d.push(0); // standard/wall flag
         d.extend_from_slice(&header(b'2', 1, 2)); // second (64-bit) header
         d.extend_from_slice(&block_64(0, 3600));
+        d.extend_from_slice(b"\n\n"); // empty footer
         let tz = parse_tzif(&d, "x").unwrap();
         assert_eq!(tz.offset_at_ms(1_000), 3600);
     }
