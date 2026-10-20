@@ -72,7 +72,7 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 
 ## Conformance & Quality
 
-- The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (draft 2.8), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
+- The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (the draft 2.8 file; draft 2.9 left the Core vectors unchanged), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
 - **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath.
 - Zero dependencies.
 
