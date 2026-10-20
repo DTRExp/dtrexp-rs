@@ -99,7 +99,10 @@ impl Tz {
         }
         // Some systems link `localtime` to the host's zone; it is no IANA name.
         if id.rsplit('/').next() == Some("localtime") {
-            return Err(UnknownTimeZone::new(id, "the host's zone is not an IANA identifier"));
+            return Err(UnknownTimeZone::new(
+                id,
+                "the host's zone is not an IANA identifier",
+            ));
         }
         for dir in ZONEINFO_DIRS {
             let mut path = PathBuf::from(dir);
@@ -108,7 +111,10 @@ impl Tz {
                 return parse_tzif(&bytes, id).map_err(|message| UnknownTimeZone::new(id, message));
             }
         }
-        Err(UnknownTimeZone::new(id, "no TZif entry in the system database"))
+        Err(UnknownTimeZone::new(
+            id,
+            "no TZif entry in the system database",
+        ))
     }
 
     pub fn name(&self) -> &str {

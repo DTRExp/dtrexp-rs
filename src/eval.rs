@@ -6,8 +6,8 @@
 use crate::ast::*;
 use crate::civil::{
     civil_from_days, day_of_quarter, day_of_year, days_in_month, days_in_quarter, days_in_year,
-    iso_week, iso_weekday, quarter_of_month, weeks_in_iso_year, Naive, MS_PER_DAY,
-    MS_PER_HOUR, MS_PER_MIN, MS_PER_SEC,
+    iso_week, iso_weekday, quarter_of_month, weeks_in_iso_year, Naive, MS_PER_DAY, MS_PER_HOUR,
+    MS_PER_MIN, MS_PER_SEC,
 };
 use crate::tz::Tz;
 
@@ -121,7 +121,11 @@ fn domain_and_field(desig: Desig, f: &Fields, scope: Scope, has_week: bool) -> (
         // i64 span behaves identically to a bespoke path: `resolve` never sees a
         // negative (which would need a finite edge), and `*` endpoints map to the
         // extremes. `has_week` switches the field to the ISO week-year.
-        Desig::Year => (i64::MIN, i64::MAX, if has_week { f.week_year } else { f.year_cal }),
+        Desig::Year => (
+            i64::MIN,
+            i64::MAX,
+            if has_week { f.week_year } else { f.year_cal },
+        ),
         Desig::Quarter => (1, 4, f.quarter),
         Desig::Month => (1, 12, f.month),
         Desig::Week => (1, weeks_in_iso_year(f.week_year), f.week),

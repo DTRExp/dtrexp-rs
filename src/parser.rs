@@ -836,17 +836,17 @@ mod tests {
     #[test]
     fn sub_parse_failures_propagate() {
         for bad in [
-            "M!",          // exclusion value-list: first item missing
-            "M!3,",        // exclusion value-list: item after ',' missing
-            "M3,",         // list: item after ',' missing
-            "E1#",         // ordinal: number after '#' missing
-            "M3/",         // stride: interval missing
-            "M3/4/",       // stride: duration missing
-            "M*:",         // range: endpoint after '*:' missing
-            "M3:",         // range: endpoint after ':' missing
-            "*:2020",      // '*'-bounds: end is not an 8-digit date
-            "20200101:99", // bounds: end is not an 8-digit date
-            "20200101/x",  // cadence: period term unit missing
+            "M!",           // exclusion value-list: first item missing
+            "M!3,",         // exclusion value-list: item after ',' missing
+            "M3,",          // list: item after ',' missing
+            "E1#",          // ordinal: number after '#' missing
+            "M3/",          // stride: interval missing
+            "M3/4/",        // stride: duration missing
+            "M*:",          // range: endpoint after '*:' missing
+            "M3:",          // range: endpoint after ':' missing
+            "*:2020",       // '*'-bounds: end is not an 8-digit date
+            "20200101:99",  // bounds: end is not an 8-digit date
+            "20200101/x",   // cadence: period term unit missing
             "20200101/2D/", // cadence: duration term missing
         ] {
             assert!(parse_branches(bad).is_err(), "`{bad}` should be rejected");

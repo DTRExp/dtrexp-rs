@@ -91,8 +91,8 @@ fn year_selector_errors() {
     err_msg("Y2020:2010", WRAP); // Y range cannot wrap — no edge
     err_msg("Y2020:10000", DOMAIN); // year range end out of domain
     err_msg("Y0:2020", DOMAIN); // year range start out of domain
-    // A descending range is caught as a wrap before either endpoint is
-    // domain-checked, so it does not exercise the start-endpoint check.
+                                // A descending range is caught as a wrap before either endpoint is
+                                // domain-checked, so it does not exercise the start-endpoint check.
     err_msg("Y10000:2020", WRAP);
     err("Y2000/1"); // stride interval must be >= 2
     err("Y2000/4/4"); // stride duration must be in 1..interval
@@ -107,7 +107,7 @@ fn domain_bounds_on_ranges_and_strides() {
     quiet("M3:7"); // range: both endpoints in domain
     quiet("H0:20/4"); // stride over a range: both endpoints in domain
     quiet("Y2000:3000/4/2"); // year stride: both endpoints in domain
-    // Out-of-domain endpoints trip the per-endpoint checks.
+                             // Out-of-domain endpoints trip the per-endpoint checks.
     err("M0:7"); // range start is the forbidden zero
     err("M3:99"); // range end out of domain
     err("M0/4"); // stride start is the forbidden zero

@@ -45,7 +45,10 @@ fn a_readable_non_tzif_entry_yields_a_parse_error() {
 fn covers_propagates_the_typed_error() {
     let expr = parse("M3").unwrap();
     let err = expr.covers(0, "Not/A_Zone").unwrap_err();
-    assert_eq!(err, UnknownTimeZone::new("Not/A_Zone", "no TZif entry in the system database"));
+    assert_eq!(
+        err,
+        UnknownTimeZone::new("Not/A_Zone", "no TZif entry in the system database")
+    );
 }
 
 #[test]

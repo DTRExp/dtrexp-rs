@@ -57,7 +57,10 @@ fn guard_rejections_carry_their_own_message() {
     // Each input would also fail a later check; the named message pins that
     // the dedicated guard fires first (deleting it changes the reason).
     err_msg("M:5", "designator requires a value");
-    err_msg("T!0900", "T takes no exclusion — write the complement explicitly");
+    err_msg(
+        "T!0900",
+        "T takes no exclusion — write the complement explicitly",
+    );
     err_msg("T*", "T takes no '*'");
     err_msg("T", "T requires a value");
 }
