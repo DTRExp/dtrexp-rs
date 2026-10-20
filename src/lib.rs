@@ -9,7 +9,7 @@
 //! let expr = parse("T0900:1800 E1:5").unwrap();      // business hours
 //! assert!(expr.warnings().is_empty());
 //! // 2026-07-07 (a Tuesday) 10:00:00Z, in ms since the Unix epoch:
-//! let t = 1_783_591_200_000;
+//! let t = 1_783_418_400_000;
 //! assert!(expr.covers(t, "UTC").unwrap());
 //! // or with a preloaded zone (infallible):
 //! assert!(expr.covers_in(t, &Tz::utc()));
