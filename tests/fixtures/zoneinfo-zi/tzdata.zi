@@ -1,0 +1,8 @@
+# version test
+# A zic input file with one rule line, four zones and one link.
+R E 1981 ma - Mar lastSu 1u 1 S
+Z Europe/Berlin 0:53:28 - LMT 1893 Ap
+Z Factory 0 - -00
+Z Broken/Text 0 - X
+Z Gone/Zone 0 - X
+L Europe/Berlin Europe/Busingen

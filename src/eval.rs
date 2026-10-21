@@ -260,17 +260,28 @@ fn cadence_calendar(c: &Cadence, local_ms: i64) -> bool {
     let t = Naive::from_ordinal_ms(local_ms);
     let anchor = c.anchor;
     // Only an estimate — `constrain` overflow makes occurrence starts slightly
-    // non-linear, so we scan a ±2 window of occurrence indices around it.
+    // non-linear, so we scan a window of occurrence indices below it. The
+    // occurrence holding `t` starts at or before it, so its index is never
+    // above the estimate; stopping there keeps every start computed at or
+    // before `t`, however large the period (spec §8 allows 2147483647Y).
     let k_est = elapsed_units(c.period_unit, anchor, t).div_euclid(c.period_n);
-    for k in (k_est - 2).max(0)..=(k_est + 2).max(0) {
+    for k in (k_est - 2).max(0)..=k_est.max(0) {
         let start = start_of_occurrence(anchor, c, k);
-        let end = end_of_occurrence(start, c);
-        let ws = start.ordinal_ms();
-        if local_ms >= ws && local_ms < end {
+        if local_ms >= start.ordinal_ms() && before_end(start, c, t, local_ms) {
             return true;
         }
     }
     false
+}
+
+/// Does `t`, at or after an occurrence's `start`, fall before its end? A
+/// duration longer than the whole units from `start` to `t` ends in a later
+/// unit than `t` whatever `constrain` does, so it needs no end computed;
+/// checking that first keeps the end's arithmetic near `t` for every legal
+/// count (spec §8).
+fn before_end(start: Naive, c: &Cadence, t: Naive, local_ms: i64) -> bool {
+    c.duration_n > elapsed_units(c.duration_unit, start, t)
+        || local_ms < end_of_occurrence(start, c)
 }
 
 /// Whole `unit`s of naive wall-clock time elapsed from `anchor` to `t` (may be

@@ -13,13 +13,19 @@
 //! string footer of a v2+ file answers after it ([`footer`]), so slim and fat
 //! files read alike.
 //!
-//! `UTC` is handled without touching the filesystem so evaluation always works
-//! for the default zone.
+//! A zone identifier is a tz database zone or link name, matched without
+//! regard to case and read in the database's own spelling (API.md): it is
+//! looked up in the folder's name list, never handed to the file system as
+//! typed, so the answer does not depend on whether that file system ignores
+//! case. `UTC` is handled without touching the filesystem so evaluation
+//! always works for the default zone.
 
 mod footer;
 
 use std::fs;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::civil::MS_PER_SEC;
 use crate::error::UnknownTimeZone;
@@ -82,7 +88,11 @@ impl Tz {
 
     /// The UTC time zone: fixed zero offset, no transitions.
     pub fn utc() -> Tz {
-        Tz::table("UTC".to_string(), Vec::new(), 0, None)
+        Tz::utc_named("UTC")
+    }
+
+    fn utc_named(name: &str) -> Tz {
+        Tz::table(name.to_string(), Vec::new(), 0, None)
     }
 
     /// A zone backed by a host offset callback: `f` maps a UTC instant (ms
@@ -101,11 +111,22 @@ impl Tz {
         }
     }
 
-    /// Load an IANA zone by identifier (e.g. `"Europe/Berlin"`). `UTC` is
-    /// synthesised; everything else is read from the system TZif database.
+    /// Load an IANA zone by identifier (e.g. `"Europe/Berlin"`): a tz
+    /// database zone or link name, matched without regard to case; the zone
+    /// is named in the database's spelling (`"europe/berlin"` loads as
+    /// `"Europe/Berlin"`). `UTC` and `Etc/UTC` are synthesised, and an empty
+    /// identifier means UTC; everything else is read from the system TZif
+    /// database, whose name list decides what is a zone. Anything else is an
+    /// [`UnknownTimeZone`]: a fixed offset (`+02:00`), `Z`, a file that names
+    /// no zone (`posixrules`, `Factory`, `localtime`) or a path.
     pub fn load(id: &str) -> Result<Tz, UnknownTimeZone> {
-        if id == "UTC" || id == "Etc/UTC" || id.is_empty() {
+        if id.is_empty() {
             return Ok(Tz::utc());
+        }
+        for utc in ["UTC", "Etc/UTC"] {
+            if id.eq_ignore_ascii_case(utc) {
+                return Ok(Tz::utc_named(utc));
+            }
         }
         // Guard against path traversal in the identifier.
         if id.starts_with('/') || id.contains("..") {
@@ -122,17 +143,7 @@ impl Tz {
                 "the host's zone is not an IANA identifier",
             ));
         }
-        for dir in ZONEINFO_DIRS {
-            let mut path = PathBuf::from(dir);
-            path.push(id);
-            if let Ok(bytes) = fs::read(&path) {
-                return parse_tzif(&bytes, id).map_err(|message| UnknownTimeZone::new(id, message));
-            }
-        }
-        Err(UnknownTimeZone::new(
-            id,
-            "no TZif entry in the system database",
-        ))
+        Names::system().load(id)
     }
 
     pub fn name(&self) -> &str {
@@ -233,6 +244,114 @@ impl Tz {
             before.max(after)
         }
     }
+}
+
+/// The zone and link names a zoneinfo folder holds, in the database's own
+/// spelling: from its `tzdata.zi` where it has one (the `Z` and `L` lines),
+/// else from a walk of the folder for TZif files.
+#[derive(Debug, Default)]
+struct Names {
+    dir: PathBuf,
+    names: Vec<String>,
+}
+
+impl Names {
+    /// The system database's names, read once: the first folder of
+    /// [`ZONEINFO_DIRS`] that holds any. Without one, no name is a zone.
+    fn system() -> &'static Names {
+        static SYSTEM: OnceLock<Names> = OnceLock::new();
+        SYSTEM.get_or_init(|| {
+            ZONEINFO_DIRS
+                .iter()
+                .find_map(|dir| Names::open(Path::new(dir)))
+                .unwrap_or_default()
+        })
+    }
+
+    /// The names in `dir`, or `None` when it holds none.
+    fn open(dir: &Path) -> Option<Names> {
+        let mut names = Vec::new();
+        match fs::read_to_string(dir.join("tzdata.zi")) {
+            Ok(text) => names.extend(names_in_zi(&text)),
+            Err(_) => walk(dir, "", &mut names),
+        }
+        names.retain(|name| is_zone_name(name));
+        (!names.is_empty()).then(|| Names {
+            dir: dir.to_path_buf(),
+            names,
+        })
+    }
+
+    /// Load the zone `id` names, matched without regard to case.
+    fn load(&self, id: &str) -> Result<Tz, UnknownTimeZone> {
+        let name = self
+            .names
+            .iter()
+            .find(|name| name.eq_ignore_ascii_case(id))
+            .ok_or_else(|| {
+                UnknownTimeZone::new(id, "not a zone or link name in the tz database")
+            })?;
+        let bytes = fs::read(self.dir.join(name))
+            .map_err(|_| UnknownTimeZone::new(id, "no TZif entry in the system database"))?;
+        parse_tzif(&bytes, name).map_err(|message| UnknownTimeZone::new(id, message))
+    }
+}
+
+/// The zone (`Z name …`) and link (`L target name`) names of a `tzdata.zi`.
+fn names_in_zi(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.lines().filter_map(|line| {
+        let mut fields = line.split_whitespace();
+        match fields.next() {
+            Some("Z") => fields.next(),
+            Some("L") => fields.nth(1),
+            _ => None,
+        }
+        .map(str::to_string)
+    })
+}
+
+/// Collect the TZif files under `dir` as names relative to the folder root,
+/// skipping what [`is_zone_name`] rules out without reading it.
+fn walk(dir: &Path, prefix: &str, names: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let file = entry.file_name();
+        let name = if prefix.is_empty() {
+            file.to_string_lossy().into_owned()
+        } else {
+            format!("{prefix}/{}", file.to_string_lossy())
+        };
+        let path = entry.path();
+        if !is_zone_name(&name) {
+            continue;
+        }
+        if path.is_dir() {
+            walk(&path, &name, names);
+        } else if is_tzif(&path) {
+            names.push(name);
+        }
+    }
+}
+
+fn is_tzif(path: &Path) -> bool {
+    let mut magic = [0u8; 4];
+    fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut magic))
+        .is_ok_and(|()| &magic == b"TZif")
+}
+
+/// Whether a name in a zoneinfo folder can name a zone: not a file that names
+/// none (`posixrules`, `Factory`, `localtime`), and not under the folders that
+/// copy the database for other uses (`posix/`, `right/`) or hold the retired
+/// `SystemV/` zones.
+fn is_zone_name(name: &str) -> bool {
+    let top = name.split('/').next().unwrap_or(name);
+    !matches!(
+        top,
+        "posixrules" | "Factory" | "localtime" | "posix" | "right" | "SystemV"
+    )
 }
 
 fn be_i32(d: &[u8], p: usize) -> i32 {
@@ -587,9 +706,91 @@ mod tests {
 
     #[test]
     fn utc_aliases_load_without_the_filesystem() {
-        // The `|| id == "Etc/UTC"` and `|| id.is_empty()` short-circuit arms.
-        assert_eq!(Tz::load("Etc/UTC").unwrap().name(), "UTC");
+        // Matched without regard to case, named in the database's spelling.
+        assert_eq!(Tz::load("Etc/UTC").unwrap().name(), "Etc/UTC");
+        assert_eq!(Tz::load("etc/utc").unwrap().name(), "Etc/UTC");
+        assert_eq!(Tz::load("utc").unwrap().name(), "UTC");
         assert_eq!(Tz::load("").unwrap().name(), "UTC");
+    }
+
+    // ---- the name list ---------------------------------------------------
+
+    fn fixture(dir: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(dir)
+    }
+
+    #[test]
+    fn a_tzdata_zi_lists_its_zones_and_links() {
+        let names = Names::open(&fixture("zoneinfo-zi")).unwrap();
+        assert_eq!(
+            names.names,
+            [
+                "Europe/Berlin",
+                "Broken/Text",
+                "Gone/Zone",
+                "Europe/Busingen"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_listed_name_loads_in_the_database_spelling_whatever_its_case() {
+        let names = Names::open(&fixture("zoneinfo-zi")).unwrap();
+        for id in ["Europe/Berlin", "europe/berlin", "EUROPE/BERLIN"] {
+            assert_eq!(names.load(id).unwrap().name(), "Europe/Berlin");
+        }
+        assert_eq!(
+            names.load("europe/busingen").unwrap().name(),
+            "Europe/Busingen"
+        );
+    }
+
+    #[test]
+    fn a_name_the_list_lacks_is_unknown_even_with_a_file() {
+        let names = Names::open(&fixture("zoneinfo-zi")).unwrap();
+        for id in ["Factory", "Europe/Paris", "+02:00"] {
+            assert_eq!(
+                names.load(id).unwrap_err(),
+                UnknownTimeZone::new(id, "not a zone or link name in the tz database")
+            );
+        }
+    }
+
+    #[test]
+    fn a_listed_name_without_a_readable_tzif_file_is_unknown() {
+        let names = Names::open(&fixture("zoneinfo-zi")).unwrap();
+        assert_eq!(
+            names.load("gone/zone").unwrap_err(),
+            UnknownTimeZone::new("gone/zone", "no TZif entry in the system database")
+        );
+        assert_eq!(
+            names.load("Broken/Text").unwrap_err(),
+            UnknownTimeZone::new("Broken/Text", "not a TZif file")
+        );
+    }
+
+    #[test]
+    fn without_a_tzdata_zi_the_folder_is_walked_for_zones() {
+        let mut names = Names::open(&fixture("zoneinfo-walk")).unwrap();
+        names.names.sort();
+        // `posixrules`, `Factory`, `localtime`, `posix/`, `right/` and
+        // `SystemV/` are skipped, and so are the files that are not TZif.
+        assert_eq!(names.names, ["America/Sao_Paulo", "Europe/Berlin"]);
+        assert_eq!(names.load("europe/berlin").unwrap().name(), "Europe/Berlin");
+    }
+
+    #[test]
+    fn a_folder_without_names_holds_no_database() {
+        assert!(Names::open(&fixture("no-such-folder")).is_none());
+        assert!(Names::open(&fixture("zoneinfo-walk/Text")).is_none());
+    }
+
+    #[test]
+    fn the_system_names_are_read_once() {
+        assert!(std::ptr::eq(Names::system(), Names::system()));
+        assert!(Names::system().names.iter().any(|n| n == "Europe/Berlin"));
     }
 
     #[test]

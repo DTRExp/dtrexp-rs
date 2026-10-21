@@ -57,7 +57,7 @@ fn selector_syntax_errors() {
     err("M3,*"); // bare '*' inside a list
     err("M*:5/2"); // stride start must be an explicit value, not '*'
     err("M5:3/2"); // a wrap range takes no stride
-    err("M10000001"); // integer too large
+    err("M2147483648"); // integer above the limit
     err("M-"); // sign with no number
     err("M13"); // value out of domain
 }
@@ -91,9 +91,9 @@ fn year_selector_errors() {
     err_msg("Y2020:2010", WRAP); // Y range cannot wrap — no edge
     err_msg("Y2020:10000", DOMAIN); // year range end out of domain
     err_msg("Y0:2020", DOMAIN); // year range start out of domain
-                                // A descending range is caught as a wrap before either endpoint is
-                                // domain-checked, so it does not exercise the start-endpoint check.
-    err_msg("Y10000:2020", WRAP);
+                                // Both endpoints are domain-checked before the wrap, as the values
+                                // come before the rule between them.
+    err_msg("Y10000:2020", DOMAIN);
     err("Y2000/1"); // stride interval must be >= 2
     err("Y2000/4/4"); // stride duration must be in 1..interval
     err("Y10000/4/2"); // stride start out of domain
@@ -147,7 +147,36 @@ fn open_year_spans_stay_quiet() {
 
 #[test]
 fn exclude_everything_is_unsatisfiable() {
-    warns("M!*"); // excluding the whole domain leaves nothing
+    warns("M!*:*"); // excluding the whole domain leaves nothing
+    err("M!*"); // an exclusion takes a value list; a bare `*` is no list item
+}
+
+#[test]
+fn a_whole_domain_star_selects_every_value() {
+    let every = parse("M* H*").unwrap();
+    assert!(every.warnings().is_empty());
+    assert!(every.covers_in(utc_ms(2026, 2, 28, 23, 59, 59), &Tz::utc()));
+    // `Q*` rescopes D to the quarter: day 92 exists only in Q3 and Q4.
+    let day92 = parse("D92 Q*").unwrap();
+    assert!(day92.covers_in(utc_ms(2026, 9, 30, 12, 0, 0), &Tz::utc()));
+    assert!(day92.covers_in(utc_ms(2026, 12, 31, 12, 0, 0), &Tz::utc()));
+    assert!(!day92.covers_in(utc_ms(2026, 6, 30, 12, 0, 0), &Tz::utc()));
+}
+
+#[test]
+fn a_bare_star_in_a_list_names_the_list() {
+    err_msg(
+        "M3,*",
+        "bare '*' in a list — the list is already the whole domain",
+    );
+}
+
+#[test]
+fn an_excluded_bare_star_fails_before_a_stride() {
+    err_msg(
+        "M!*/2",
+        "an exclusion takes a value list, not a bare '*' — '!*:*' excludes the whole domain",
+    );
 }
 
 #[test]

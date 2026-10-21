@@ -6,10 +6,10 @@ use dtrexp::{parse, Tz, UnknownTimeZone};
 fn load_unknown_zone_yields_typed_error() {
     let err = Tz::load("No/Such_Zone").unwrap_err();
     assert_eq!(err.id, "No/Such_Zone");
-    assert_eq!(err.message, "no TZif entry in the system database");
+    assert_eq!(err.message, "not a zone or link name in the tz database");
     assert_eq!(
         err.to_string(),
-        "unknown time zone No/Such_Zone: no TZif entry in the system database"
+        "unknown time zone No/Such_Zone: not a zone or link name in the tz database"
     );
 }
 
@@ -23,10 +23,10 @@ fn load_rejects_path_traversal_as_invalid_identifier() {
 }
 
 /// The zone database holds plain-text files (`+VERSION`, `zone.tab`, …) beside
-/// the binary zones. Naming one resolves to a readable file that is not TZif —
-/// the parse failure has to surface as the typed error, not a panic.
+/// the binary zones. None of them is a zone name, so naming one is an unknown
+/// zone, never a parse of the file.
 #[test]
-fn a_readable_non_tzif_entry_yields_a_parse_error() {
+fn a_plain_text_entry_is_no_zone_name() {
     let entry = ["+VERSION", "zone.tab", "iso3166.tab", "tzdata.zi"]
         .into_iter()
         .find(|id| {
@@ -38,7 +38,7 @@ fn a_readable_non_tzif_entry_yields_a_parse_error() {
 
     let err = Tz::load(entry).unwrap_err();
     assert_eq!(err.id, entry);
-    assert_eq!(err.message, "not a TZif file");
+    assert_eq!(err.message, "not a zone or link name in the tz database");
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn covers_propagates_the_typed_error() {
     let err = expr.covers(0, "Not/A_Zone").unwrap_err();
     assert_eq!(
         err,
-        UnknownTimeZone::new("Not/A_Zone", "no TZif entry in the system database")
+        UnknownTimeZone::new("Not/A_Zone", "not a zone or link name in the tz database")
     );
 }
 

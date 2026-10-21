@@ -154,9 +154,14 @@ fn a_degenerate_range_takes_a_stride() {
 }
 
 #[test]
-fn read_uint_accepts_exactly_ten_million() {
-    // The overflow guard is strictly `> 10_000_000`.
-    quiet("20200101/10000000m");
+fn the_integer_limit_is_inclusive() {
+    // The guard is strictly `> 2147483647`, however many leading zeros lead.
+    quiet("20200101/2147483647m");
+    quiet("20200101/0002147483647m");
+    err_msg(
+        "20200101/2147483648m",
+        "integer above the limit of 2147483647",
+    );
 }
 
 // ---- parser: cadence length table -------------------------------------------
@@ -211,6 +216,14 @@ fn stride_interval_lower_and_upper_edges_are_legal() {
     quiet("M1/12"); // interval equal to the domain size is legal
 }
 
+#[test]
+fn an_explicit_one_unit_stride_duration_is_legal() {
+    // The duration's lower edge is 1, inclusive; 0 is the first value refused.
+    quiet("M1/3/1");
+    quiet("Y2000/4/1");
+    err_msg("M1/3/0", "stride duration must be in 1..interval");
+}
+
 // ---- validate: year enumeration and its 1000-year cutoff ----------------------
 
 #[test]
@@ -227,6 +240,17 @@ fn the_year_span_cutoff_is_strictly_over_1000() {
     quiet("Y1001,2002 M2 D29");
 }
 
+#[test]
+fn a_strided_year_span_of_exactly_1000_is_enumerated() {
+    // A stride selects only some of its span's years, so the span's own edge
+    // decides: 1000 wide is enumerated, and years 1 and 1001 are both common.
+    warns("D366 Y1:1001/1000");
+    // 2021 and 3021 both have 52 ISO weeks.
+    warns("W53 Y2021:3021/1000");
+    // One year wider is open, and stays quiet.
+    quiet("D366 Y1:1002/1001");
+}
+
 // ---- validate: warning selection and position ----------------------------------
 
 #[test]
@@ -238,7 +262,7 @@ fn ordinal_weekday_selectors_never_warn() {
 
 #[test]
 fn exclude_everything_on_weekday_warns() {
-    warns("E!*");
+    warns("E!*:*");
 }
 
 #[test]

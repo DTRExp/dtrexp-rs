@@ -44,7 +44,7 @@ fn a_call_on_a_bound_copy_still_rejects_an_unknown_zone() {
     let err = berlin.covers(T, "Mars/Olympus").unwrap_err();
     assert_eq!(
         err,
-        UnknownTimeZone::new("Mars/Olympus", "no TZif entry in the system database")
+        UnknownTimeZone::new("Mars/Olympus", "not a zone or link name in the tz database")
     );
 }
 
@@ -59,9 +59,58 @@ fn rebinds_a_bound_copy() {
 }
 
 #[test]
-fn keeps_the_zone_name_as_given() {
+fn names_the_zone_in_the_database_spelling() {
     let dtr = parse(HOURS).unwrap();
     assert_eq!(dtr.with_zone("Etc/UTC").unwrap().zone(), Some("Etc/UTC"));
+    assert_eq!(dtr.with_zone("utc").unwrap().zone(), Some("UTC"));
+    let berlin = dtr.with_zone("europe/berlin").unwrap();
+    assert_eq!(berlin.zone(), Some("Europe/Berlin"));
+    assert!(berlin.covers(T, "").unwrap());
+}
+
+#[test]
+fn matches_a_zone_or_link_name_without_regard_to_case() {
+    let dtr = parse(HOURS).unwrap();
+    for id in [
+        "europe/berlin",
+        "EUROPE/BERLIN",
+        "Europe/berlin",
+        "us/eastern",
+        "etc/gmt-2",
+    ] {
+        assert!(dtr.covers(T, id).is_ok(), "`{id}` should load");
+    }
+    assert_eq!(Tz::load("us/eastern").unwrap().name(), "US/Eastern");
+    assert_eq!(Tz::load("etc/gmt+5").unwrap().name(), "Etc/GMT+5");
+    // 09:30 in Berlin, and in Etc/GMT-2 (two hours east of UTC) too.
+    assert!(dtr.covers(T, "etc/gmt-2").unwrap());
+}
+
+#[test]
+fn refuses_what_names_no_zone_in_the_database() {
+    let dtr = parse(HOURS).unwrap();
+    for id in [
+        "+02:00",
+        "-05:00",
+        "UTC+2",
+        "GMT+2",
+        "Z",
+        "posixrules",
+        "Factory",
+        "SystemV/AST4",
+        "PST",
+        "Berlin",
+        "zone.tab",
+        "tzdata.zi",
+        "+VERSION",
+    ] {
+        assert_eq!(
+            dtr.covers(T, id).unwrap_err(),
+            UnknownTimeZone::new(id, "not a zone or link name in the tz database"),
+            "`{id}`"
+        );
+        assert!(dtr.with_zone(id).is_err(), "`{id}` should not bind");
+    }
 }
 
 #[test]
@@ -69,7 +118,7 @@ fn fails_at_once_on_an_unknown_zone() {
     let err = parse(HOURS).unwrap().with_zone("Mars/Olympus").unwrap_err();
     assert_eq!(
         err,
-        UnknownTimeZone::new("Mars/Olympus", "no TZif entry in the system database")
+        UnknownTimeZone::new("Mars/Olympus", "not a zone or link name in the tz database")
     );
 }
 

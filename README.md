@@ -19,7 +19,7 @@ Scope: **parsing, validation and coverage evaluation** (the spec's core interfac
 cargo add dtrexp
 ```
 
-Rust 2021 edition. No dependencies, including the zone handling; IANA zones are read straight from the system zoneinfo folder (`/var/db/timezone/zoneinfo` on macOS, else `/usr/share/zoneinfo`), and slim and fat zone files read alike.
+Rust 2021 edition. No dependencies, including the zone handling; IANA zones are read straight from the system zoneinfo folder (`/var/db/timezone/zoneinfo` on macOS, else `/usr/share/zoneinfo`), and slim and fat zone files read alike. That folder is also where the zone rules come from: the answers follow the tz database release the system has installed, and pinning a release means pinning the system's tz data (spec §9).
 
 ## Usage
 
@@ -75,7 +75,7 @@ Wall-clock times resolve as they do for a loaded zone; a skipped time moves forw
 
 ## Errors and Warnings
 
-Both a `ParseError` and a `Warning` carry a **position**; the byte offset into the source where the problem was detected.
+Both a `ParseError` and a `Warning` carry a **position**: the 0-based offset of the first character of the token at fault, as spec §8 defines it. It counts code points and bytes alike, since every character before it is ASCII. When an expression breaks more than one rule, the error is the one with the earliest position (`M13/1` names the `13`, not the interval).
 
 ```rust
 let err = dtrexp::parse("T2500").unwrap_err();      // hour out of range
@@ -91,11 +91,16 @@ warnings[0].message;  // "unsatisfiable — day never exists …"  (no February 
 - `validate(s)` returns `Result<Vec<Warning>, ParseError>`: the warnings on success, or the same `ParseError` when the input does not parse. It carries the same warnings as `Dtrexp::warnings()`.
 - `with_zone(tz_id)` returns a copy whose evaluation defaults to `tz_id`, readable as `zone()` (`None` when unbound); the original is left as it is, and the copy's warnings are the same, since the zone belongs to evaluation, never to the expression. The zone is loaded once, at bind, so an unknown identifier fails there (under `host-tz` it is checked at bind and loaded again per call, from the zoneinfo filesystem; where there is none, as on WASM, evaluate a host-backed `Tz` with `covers_in` instead) with `UnknownTimeZone`; so does an empty one, because binding is explicit and never quietly means UTC.
 - `covers` / `covers_in` take an IANA zone; on `covers`, an empty identifier means the bound zone, else UTC, and any other identifier (`"UTC"` included) wins over the bound zone. `covers_in`'s zone always wins. An identifier that does not resolve is the one runtime failure, `UnknownTimeZone { id, message }`; `covers_in` takes an already-loaded `Tz` and cannot fail.
+- An integer in an expression is at most 2,147,483,647, however many leading zeros it carries (`M0003` is `M3`); a larger one is a parse error at that integer. Every count up to the limit evaluates, so `Y1:*/2147483647` and `20200101/2147483647Y` are legal expressions.
 - Warnings are the spec's [§9.1](https://github.com/DTRExp/dtrexp/blob/main/spec.md#91-the-existence-rule) unsatisfiability lint: expressions that parse but can never match.
+
+## Zone Identifiers
+
+A zone identifier is a tz database zone or link name (`Europe/Berlin`, `US/Eastern`, `UTC`, `Etc/GMT+5`), matched without regard to case; the loaded `Tz`, and the zone a `with_zone` copy reports, carry the database's spelling (`"europe/berlin"` loads as `Europe/Berlin`). The names come from the zoneinfo folder's own list, its `tzdata.zi`, or a walk of the folder for zone files where it has none; so a name loads the same on a file system that ignores case and on one that does not. Anything else is an `UnknownTimeZone`: a fixed offset (`+02:00`, `UTC+2`), `Z`, a file in the folder that names no zone (`posixrules`, `Factory`, `localtime`, `zone.tab`), the `posix/`, `right/` and `SystemV/` trees, or a path. On `covers`, an empty identifier is no name; it means no zone was passed.
 
 ## Conformance & Quality
 
-- The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (the draft 2.8 file; draft 2.9 left the Core vectors unchanged), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`). Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
+- Implements DTRExp **draft 3**. The test suite is driven by the shared [`vectors.json`][vectors] from the spec repo (the draft 3 file), vendored at `tests/vectors.json`: every coverage, rejection, warning and quiet vector, including the calendar traps (Feb 29 across 2000/2024/**2100**, `W53` existence, DST gap/overlap in `Europe/Berlin`), and every rejection at the position the vector gives. Run `cargo test`. See [VECTORS.md][vectors-md] for how the suite works.
 - **Hand-rolled TZif reader.** `Tz::load` reads the system zoneinfo database directly; there is no time-zone crate underneath. A zone file's transitions answer up to the last one it lists, and its POSIX TZ string footer answers after that, so a slim file (the zic default since 2020) and a fat one give the same offsets, and dates past 2037 follow the zone's current rules.
 - Zero dependencies.
 

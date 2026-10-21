@@ -1,7 +1,7 @@
 //! Conformance suite: runs the vendored `vectors.json` (spec §12).
 //!
 //! `vectors.json` — not the prose — is the contract. Every `invalid` expression
-//! must be rejected at parse, every `warnings` expression accepted with ≥1
+//! must be rejected at parse, at the `position` the vector gives, every `warnings` expression accepted with ≥1
 //! warning, every `quiet` expression accepted with zero warnings, and every
 //! instant in every `coverage` group must return the expected boolean.
 
@@ -20,7 +20,6 @@ mod json {
     pub enum Json {
         Null,
         Bool(bool),
-        // Numbers are parsed but unused by the suite (spec version, etc.).
         Num(#[allow(dead_code)] f64),
         Str(String),
         Arr(Vec<Json>),
@@ -44,6 +43,12 @@ mod json {
             match self {
                 Json::Arr(a) => a,
                 _ => panic!("expected array"),
+            }
+        }
+        pub fn as_usize(&self) -> usize {
+            match self {
+                Json::Num(n) => *n as usize,
+                _ => panic!("expected number, got {self:?}"),
             }
         }
         pub fn as_bool(&self) -> bool {
@@ -299,8 +304,16 @@ fn run_invalid(root: &Json) -> Report {
     for case in root.get("invalid").as_arr() {
         let expr_s = case.get("expression").as_str();
         let reason = case.get("reason").as_str();
+        let want = case.get("position").as_usize();
         match parse(expr_s) {
-            Err(_) => r.passed += 1,
+            Err(e) if e.pos == want => r.passed += 1,
+            Err(e) => {
+                r.failed += 1;
+                r.failures.push(format!(
+                    "`{expr_s}` ({reason}) rejected at {}, expected {want}: {}",
+                    e.pos, e.message
+                ));
+            }
             Ok(_) => {
                 r.failed += 1;
                 r.failures

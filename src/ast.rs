@@ -59,6 +59,11 @@ pub struct Selector {
     pub ordinal: Option<(i64, i64)>,
     /// Byte offset of this component (for diagnostics).
     pub pos: usize,
+    /// Where each atom's start and end value tokens begin, parallel to `atoms`
+    /// (one offset twice for a single value); for an ordinal, its weekday.
+    pub at: Vec<(usize, usize)>,
+    /// Where a stride's interval count begins; unused without a stride.
+    pub interval_at: usize,
 }
 
 /// A half-open time-of-day interval in milliseconds since local midnight.

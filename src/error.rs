@@ -2,10 +2,13 @@
 
 use std::fmt;
 
-/// A parse/validation failure, positioned at a byte offset into the input.
+/// A parse/validation failure, positioned at the token at fault (spec §8,
+/// *Error positions*).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
-    /// Byte offset into the source expression where the problem was detected.
+    /// The 0-based offset of the first character of the token at fault. It
+    /// counts code points, as the spec does, and bytes alike: the parser steps
+    /// only over ASCII, so every character before it is ASCII.
     pub pos: usize,
     /// Human-readable description.
     pub message: String,
@@ -29,7 +32,8 @@ impl fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 /// A non-fatal diagnostic: the expression parsed, but is (e.g.) statically
-/// unsatisfiable. Carries the byte offset of the offending component.
+/// unsatisfiable. Carries the offset of the first character of the component
+/// it concerns.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Warning {
     pub pos: usize,

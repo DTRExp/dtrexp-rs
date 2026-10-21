@@ -1,4 +1,4 @@
-//! DTRExp — Date-Time Range & Recurrence Expression (draft 2.9).
+//! DTRExp — Date-Time Range & Recurrence Expression (draft 3).
 //!
 //! A compact string expression denoting a possibly-infinite set of time
 //! intervals, evaluated for **coverage** ("is this instant inside the set?").
@@ -38,8 +38,8 @@ pub struct Dtrexp {
     zone: Option<Bound>,
 }
 
-/// The evaluation zone bound by [`Dtrexp::with_zone`]: the name as given, and
-/// the zone it loaded to at bind time. Under `host-tz` a [`Tz`] is not `Send`,
+/// The evaluation zone bound by [`Dtrexp::with_zone`]: its name in the tz
+/// database's spelling, and the zone it loaded to at bind time. Under `host-tz` a [`Tz`] is not `Send`,
 /// so the binding keeps only the name and loads it per call, as
 /// [`Dtrexp::covers`] does for a name passed to it; `Dtrexp` stays `Send + Sync`.
 /// Either way the zone comes from the zoneinfo filesystem: without one (WASM),
@@ -52,11 +52,12 @@ struct Bound {
 }
 
 impl Bound {
-    fn new(name: &str, tz: Tz) -> Bound {
+    fn new(tz: Tz) -> Bound {
+        let name = tz.name().to_string();
         #[cfg(feature = "host-tz")]
         drop(tz);
         Bound {
-            name: name.to_string(),
+            name,
             #[cfg(not(feature = "host-tz"))]
             tz,
         }
@@ -79,11 +80,7 @@ impl Bound {
 /// input. On success, any non-fatal diagnostics are available via
 /// [`Dtrexp::warnings`].
 pub fn parse(input: &str) -> Result<Dtrexp, ParseError> {
-    let branches = parser::parse_branches(input)?;
-    let mut warnings = Vec::new();
-    for b in &branches {
-        warnings.extend(validate::check(b)?);
-    }
+    let (branches, warnings) = parser::parse_branches(input)?;
     Ok(Dtrexp {
         branches,
         warnings,
@@ -128,13 +125,14 @@ impl Dtrexp {
         }
         let tz = Tz::load(tz_id)?;
         Ok(Dtrexp {
-            zone: Some(Bound::new(tz_id, tz)),
+            zone: Some(Bound::new(tz)),
             ..self.clone()
         })
     }
 
-    /// The zone bound with [`Dtrexp::with_zone`], as it was given, or `None`
-    /// when none is bound.
+    /// The zone bound with [`Dtrexp::with_zone`], in the tz database's
+    /// spelling (`"europe/berlin"` binds as `"Europe/Berlin"`), or `None` when
+    /// none is bound.
     pub fn zone(&self) -> Option<&str> {
         self.zone.as_ref().map(|b| b.name.as_str())
     }

@@ -1,6 +1,6 @@
 {
-  "spec": 2.8,
-  "description": "DTRExp draft-2.8 conformance vectors. An implementation is conforming iff it (a) rejects every `invalid` expression at parse time, (b) reports a warning for every `warnings` expression while accepting it, (c) accepts every `quiet` expression with NO warnings, and (d) returns the expected boolean from covers(instant, {tz}) for every instant in every `coverage` group. Instants are absolute (ISO 8601 UTC); `tz` is the evaluation time zone. These vectors — not the spec prose — are the contract.",
+  "spec": 3,
+  "description": "DTRExp draft-3 conformance vectors. An implementation is conforming iff it (a) rejects every `invalid` expression at parse time, reporting the `position` given (the 0-based code-point offset of the token at fault, spec §8), (b) reports a warning for every `warnings` expression while accepting it, (c) accepts every `quiet` expression with NO warnings, and (d) returns the expected boolean from covers(instant, {tz}) for every instant in every `coverage` group. Instants are absolute (ISO 8601 UTC); `tz` is the evaluation time zone. These vectors — not the spec prose — are the contract.",
   "coverage": [
     {
       "id": "month-single",
@@ -1089,236 +1089,681 @@
         "2024-05-15T12:00:00Z": true,
         "2024-06-15T12:00:00Z": false
       }
+    },
+    {
+      "id": "bounds-mixed-precision-coarse-end",
+      "expression": "20240101T1800:20240101",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-01T17:59:59Z": false,
+        "2024-01-01T18:00:00Z": true,
+        "2024-01-01T23:59:59Z": true,
+        "2024-01-02T00:00:00Z": false
+      }
+    },
+    {
+      "id": "bounds-mixed-precision-fine-start-inside",
+      "expression": "20240101T180030:20240101T1800",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-01T18:00:29Z": false,
+        "2024-01-01T18:00:30Z": true,
+        "2024-01-01T18:00:59Z": true,
+        "2024-01-01T18:01:00Z": false
+      }
+    },
+    {
+      "id": "star-star-range-in-list",
+      "expression": "M*:*,5",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-15T12:00:00Z": true,
+        "2024-06-15T12:00:00Z": true
+      }
+    },
+    {
+      "id": "leading-zeros-long",
+      "expression": "M0000000000000003",
+      "tz": "UTC",
+      "cases": {
+        "2024-03-15T12:00:00Z": true,
+        "2024-04-15T12:00:00Z": false
+      }
+    },
+    {
+      "id": "bounds-literal-at-domain-ceiling",
+      "expression": "*:99991231",
+      "tz": "UTC",
+      "cases": {
+        "9999-12-31T23:59:59.999Z": true,
+        "2024-01-01T00:00:00Z": true
+      }
+    },
+    {
+      "id": "cadence-at-domain-ceiling",
+      "expression": "00010101/2D",
+      "tz": "UTC",
+      "cases": {
+        "0001-01-01T00:00:00Z": true,
+        "0001-01-02T00:00:00Z": false,
+        "9999-12-30T12:00:00Z": false,
+        "9999-12-31T00:00:00Z": true,
+        "9999-12-31T23:59:59.999Z": true
+      }
+    },
+    {
+      "id": "year-stride-large-interval",
+      "expression": "Y1:*/10000001",
+      "tz": "UTC",
+      "cases": {
+        "0001-06-01T00:00:00Z": true,
+        "0002-06-01T00:00:00Z": false,
+        "9999-01-01T00:00:00Z": false
+      }
+    },
+    {
+      "id": "integer-at-limit",
+      "expression": "Y1:*/2147483647",
+      "tz": "UTC",
+      "cases": {
+        "0001-06-01T00:00:00Z": true,
+        "0002-06-01T00:00:00Z": false
+      }
+    },
+    {
+      "id": "dst-cadence-anchor-gap-forward-new-york",
+      "expression": "20240310T0230/4H",
+      "tz": "America/New_York",
+      "cases": {
+        "2024-03-10T07:29:59Z": false,
+        "2024-03-10T07:30:00Z": true,
+        "2024-03-10T08:29:59Z": true,
+        "2024-03-10T08:30:00Z": false
+      }
+    },
+    {
+      "id": "dst-cadence-anchor-overlap-new-york",
+      "expression": "20241103T0130/4H",
+      "tz": "America/New_York",
+      "cases": {
+        "2024-11-03T05:29:59Z": false,
+        "2024-11-03T05:30:00Z": true,
+        "2024-11-03T06:30:00Z": false,
+        "2024-11-03T09:30:00Z": true
+      }
+    },
+    {
+      "id": "dst-cadence-window-opens-at-gap-end",
+      "expression": "20240331T0230/2D",
+      "tz": "Europe/Berlin",
+      "cases": {
+        "2024-03-31T00:59:59Z": false,
+        "2024-03-31T01:00:00Z": true,
+        "2024-03-31T01:29:59Z": true
+      }
+    },
+    {
+      "id": "cadence-same-unit-exact",
+      "expression": "20200101/11M/10M",
+      "tz": "UTC",
+      "cases": {
+        "2020-01-15T12:00:00Z": true,
+        "2020-10-31T12:00:00Z": true,
+        "2020-11-15T12:00:00Z": false,
+        "2020-12-15T12:00:00Z": true
+      }
+    },
+    {
+      "id": "cadence-same-unit-exact-years",
+      "expression": "20200101/366Y/365Y",
+      "tz": "UTC",
+      "cases": {
+        "2020-06-01T00:00:00Z": true,
+        "2384-06-01T00:00:00Z": true,
+        "2385-06-01T00:00:00Z": false
+      }
     }
   ],
   "invalid": [
     {
       "expression": "",
-      "reason": "empty expression"
+      "reason": "empty expression",
+      "position": 0
     },
     {
       "expression": "X5",
-      "reason": "unknown designator"
+      "reason": "unknown designator",
+      "position": 0
     },
     {
       "expression": "M",
-      "reason": "designator without value"
+      "reason": "designator without value",
+      "position": 1
     },
     {
       "expression": "M13",
-      "reason": "value out of domain (month 1-12)"
+      "reason": "value out of domain (month 1-12)",
+      "position": 1
     },
     {
       "expression": "M0",
-      "reason": "zero value"
+      "reason": "zero value",
+      "position": 1
     },
     {
       "expression": "E8",
-      "reason": "weekday out of domain (1-7)"
+      "reason": "weekday out of domain (1-7)",
+      "position": 1
     },
     {
       "expression": "D367 Y*",
-      "reason": "day-of-year out of domain (1-366)"
+      "reason": "day-of-year out of domain (1-366)",
+      "position": 1
     },
     {
       "expression": "Y*/3",
-      "reason": "anchorless stride — explicit start required"
+      "reason": "anchorless stride — explicit start required",
+      "position": 2
     },
     {
       "expression": "M3/14",
-      "reason": "stride interval exceeds parent domain — use a cadence"
+      "reason": "stride interval exceeds parent domain — use a cadence",
+      "position": 3
     },
     {
       "expression": "M1/1",
-      "reason": "stride interval must be >= 2"
+      "reason": "stride interval must be >= 2",
+      "position": 3
     },
     {
       "expression": "M1/3/3",
-      "reason": "stride duration must be < interval"
+      "reason": "stride duration must be < interval",
+      "position": 5
     },
     {
       "expression": "M1,3/2",
-      "reason": "stride not allowed on a list"
+      "reason": "stride not allowed on a list",
+      "position": 4
     },
     {
       "expression": "D-10:*/2",
-      "reason": "stride start must be non-negative (end-relative anchors shift per parent instance)"
+      "reason": "stride start must be non-negative (end-relative anchors shift per parent instance)",
+      "position": 6
     },
     {
       "expression": "M3!5",
-      "reason": "exclusion only immediately after the designator"
+      "reason": "exclusion only immediately after the designator",
+      "position": 2
     },
     {
       "expression": "M3 M5",
-      "reason": "duplicate designator in one expression"
+      "reason": "duplicate designator in one expression",
+      "position": 3
     },
     {
       "expression": "20230229/1Y",
-      "reason": "cadence anchor is not a real calendar date"
+      "reason": "cadence anchor is not a real calendar date",
+      "position": 0
     },
     {
       "expression": "20240131/1M",
-      "reason": "default duration (1M) equals period — duration must be < period"
+      "reason": "default duration (1M) equals period — duration must be < period",
+      "position": 9
     },
     {
       "expression": "20200101/10D/20D",
-      "reason": "cadence duration exceeds period"
+      "reason": "cadence duration exceeds period",
+      "position": 13
     },
     {
       "expression": "20200101/0D",
-      "reason": "zero cadence period"
+      "reason": "zero cadence period",
+      "position": 9
     },
     {
       "expression": "20200101/10X",
-      "reason": "unknown cadence unit"
+      "reason": "unknown cadence unit",
+      "position": 11
     },
     {
       "expression": "20200106/10D 20300101/10D",
-      "reason": "more than one cadence per expression"
+      "reason": "more than one cadence per expression",
+      "position": 13
     },
     {
       "expression": "M3 20180101:* 20190101:*",
-      "reason": "more than one bounds component per expression"
+      "reason": "more than one bounds component per expression",
+      "position": 14
     },
     {
       "expression": "20180301:20170301",
-      "reason": "backwards bounds range"
+      "reason": "backwards bounds range",
+      "position": 9
     },
     {
       "expression": "20180120T1801:20180120T1800",
-      "reason": "backwards bounds — the start span begins exactly at the end span's end, an empty window"
+      "reason": "backwards bounds — the start span begins exactly at the end span's end, an empty window",
+      "position": 14
     },
     {
       "expression": "D0",
-      "reason": "zero value on a 1-based domain"
+      "reason": "zero value on a 1-based domain",
+      "position": 1
     },
     {
       "expression": "E7#0",
-      "reason": "ordinal zero"
+      "reason": "ordinal zero",
+      "position": 3
     },
     {
       "expression": "E7#6",
-      "reason": "ordinal out of range (-5..-1, 1..5)"
+      "reason": "ordinal out of range (-5..-1, 1..5)",
+      "position": 3
     },
     {
       "expression": "D5#2",
-      "reason": "ordinal only valid on E"
+      "reason": "ordinal only valid on E",
+      "position": 2
     },
     {
       "expression": "T2500:2600",
-      "reason": "hour out of range in time value"
+      "reason": "hour out of range in time value",
+      "position": 1
     },
     {
       "expression": "T0960:1000",
-      "reason": "minute out of range in time value"
+      "reason": "minute out of range in time value",
+      "position": 1
     },
     {
       "expression": "T2400:0100",
-      "reason": "'2400' is valid only in range-end position"
+      "reason": "'2400' is valid only in range-end position",
+      "position": 1
     },
     {
       "expression": "T22:24",
-      "reason": "hour 24 is the exact 4-digit token '2400' — 2-digit '24' is not a valid range end"
+      "reason": "hour 24 is the exact 4-digit token '2400' — 2-digit '24' is not a valid range end",
+      "position": 4
     },
     {
       "expression": "T2300:24",
-      "reason": "hour 24 is the exact 4-digit token '2400', whatever the start's precision"
+      "reason": "hour 24 is the exact 4-digit token '2400', whatever the start's precision",
+      "position": 6
     },
     {
       "expression": "T0000:240000",
-      "reason": "hour 24 never carries seconds precision — the exact token '2400' only"
+      "reason": "hour 24 never carries seconds precision — the exact token '2400' only",
+      "position": 6
     },
     {
       "expression": "T0000:2430",
-      "reason": "hour out of range — 24 exists only as the exact token '2400'"
+      "reason": "hour out of range — 24 exists only as the exact token '2400'",
+      "position": 6
     },
     {
       "expression": "T0900:2500",
-      "reason": "hour out of range in range-end position"
+      "reason": "hour out of range in range-end position",
+      "position": 6
     },
     {
       "expression": "M3 |",
-      "reason": "empty union branch"
+      "reason": "empty union branch",
+      "position": 4
     },
     {
       "expression": "M3~",
-      "reason": "unexpected trailing character"
+      "reason": "unexpected trailing character",
+      "position": 2
     },
     {
       "expression": "20200101/10D/1M",
-      "reason": "month/year duration unit requires a month/year period"
+      "reason": "month/year duration unit requires a month/year period",
+      "position": 13
     },
     {
       "expression": "Y-1",
-      "reason": "negative value on Y — no edge to count back from"
+      "reason": "negative value on Y — no edge to count back from",
+      "position": 1
     },
     {
       "expression": "Y0",
-      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)"
+      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)",
+      "position": 1
     },
     {
       "expression": "Y12000",
-      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)"
+      "reason": "year out of domain — Y takes 4-digit ISO years (1-9999)",
+      "position": 1
     },
     {
       "expression": "M1,*",
-      "reason": "bare '*' in a list — the list is already the whole domain"
+      "reason": "bare '*' in a list — the list is already the whole domain",
+      "position": 3
     },
     {
       "expression": "T!0900:1200",
-      "reason": "T takes no exclusion — write the complement explicitly"
+      "reason": "T takes no exclusion — write the complement explicitly",
+      "position": 1
     },
     {
       "expression": "T0900:*",
-      "reason": "T takes no '*'"
+      "reason": "T takes no '*'",
+      "position": 6
     },
     {
       "expression": "T0900:1800/2",
-      "reason": "T takes no stride"
+      "reason": "T takes no stride",
+      "position": 10
     },
     {
       "expression": "20240101/2M/58D",
-      "reason": "duration not conservatively smaller than period (58d >= 2x28d)"
+      "reason": "duration not conservatively smaller than period (58d >= 2x28d)",
+      "position": 12
     },
     {
       "expression": "T0900:0900",
-      "reason": "T range with equal endpoints — half-open, would cover nothing"
+      "reason": "T range with equal endpoints — half-open, would cover nothing",
+      "position": 6
     },
     {
       "expression": "T12:1200",
-      "reason": "equal resolved endpoints — range endpoints resolve to span-start instants"
+      "reason": "equal resolved endpoints — range endpoints resolve to span-start instants",
+      "position": 4
     },
     {
       "expression": "M3\tM5",
-      "reason": "whitespace is the ASCII space only — tabs are syntax errors"
+      "reason": "whitespace is the ASCII space only — tabs are syntax errors",
+      "position": 2
     },
     {
       "expression": "H-0",
-      "reason": "'-0' is not a value — the sign requires a nonzero integer"
+      "reason": "'-0' is not a value — the sign requires a nonzero integer",
+      "position": 1
     },
     {
       "expression": "M-0",
-      "reason": "'-0' is not a value — the sign requires a nonzero integer"
+      "reason": "'-0' is not a value — the sign requires a nonzero integer",
+      "position": 1
     },
     {
       "expression": "Q2 D40 M1",
-      "reason": "M wins D's scope by granularity, never textual order — D40 is out of the month domain"
+      "reason": "M wins D's scope by granularity, never textual order — D40 is out of the month domain",
+      "position": 4
     },
     {
       "expression": "20180120T2400/1D",
-      "reason": "hour 24 never appears in a date literal — it is a T-range token only"
+      "reason": "hour 24 never appears in a date literal — it is a T-range token only",
+      "position": 0
     },
     {
       "expression": "20180120T09",
-      "reason": "malformed time-part in date literal — T-glue is unconditional, no re-tokenization"
+      "reason": "malformed time-part in date literal — T-glue is unconditional, no re-tokenization",
+      "position": 0
     },
     {
       "expression": "*:*",
-      "reason": "bounds require at least one date-literal endpoint"
+      "reason": "bounds require at least one date-literal endpoint",
+      "position": 2
     },
     {
       "expression": "D-32",
-      "reason": "negative value out of domain — symmetric parse-time check (-31…-1 for month-scoped D)"
+      "reason": "negative value out of domain — symmetric parse-time check (-31…-1 for month-scoped D)",
+      "position": 1
+    },
+    {
+      "expression": "M1\nD1",
+      "reason": "whitespace is the ASCII space only — a newline is a syntax error",
+      "position": 2
+    },
+    {
+      "expression": "M1 D1",
+      "reason": "whitespace is the ASCII space only — a no-break space is a syntax error",
+      "position": 2
+    },
+    {
+      "expression": "M1　D1",
+      "reason": "whitespace is the ASCII space only — an ideographic space is a syntax error",
+      "position": 2
+    },
+    {
+      "expression": "\tM3",
+      "reason": "a tab is a syntax error at either end too",
+      "position": 0
+    },
+    {
+      "expression": "M3\t",
+      "reason": "a tab is a syntax error at either end too",
+      "position": 2
+    },
+    {
+      "expression": "M3|\tM5",
+      "reason": "a tab is a syntax error around '|' too",
+      "position": 3
+    },
+    {
+      "expression": "M٣",
+      "reason": "digits are ASCII 0–9 only — an Arabic-Indic three is no digit",
+      "position": 1
+    },
+    {
+      "expression": "M３",
+      "reason": "digits are ASCII 0–9 only — a fullwidth three is no digit",
+      "position": 1
+    },
+    {
+      "expression": "H22:0/2",
+      "reason": "a literal 0 end wraps on 0-based domains, and wrap ranges take no stride",
+      "position": 5
+    },
+    {
+      "expression": "m30:0/5",
+      "reason": "a literal 0 end wraps on 0-based domains, and wrap ranges take no stride",
+      "position": 5
+    },
+    {
+      "expression": "T0900.500",
+      "reason": "milliseconds follow only a 6-digit hhmmss time value",
+      "position": 5
+    },
+    {
+      "expression": "T1200:1201.000",
+      "reason": "milliseconds follow only a 6-digit hhmmss time value",
+      "position": 10
+    },
+    {
+      "expression": "20200101/60m/1H",
+      "reason": "H/m compare exactly — 60m equals 1H, so the duration is not smaller than the period",
+      "position": 13
+    },
+    {
+      "expression": "20200101/120m/2H",
+      "reason": "H/m compare exactly — 120m equals 2H",
+      "position": 14
+    },
+    {
+      "expression": "20240101T1800:20240101T175959",
+      "reason": "backwards bounds — the first span begins exactly at the end of the last (mixed precision)",
+      "position": 14
+    },
+    {
+      "expression": "M!*",
+      "reason": "an exclusion takes a value list — a bare '*' is not a list item",
+      "position": 2
+    },
+    {
+      "expression": "00000101",
+      "reason": "date-literal years are 1–9999",
+      "position": 0
+    },
+    {
+      "expression": "00000101/1D",
+      "reason": "date-literal years are 1–9999, in a cadence anchor too",
+      "position": 0
+    },
+    {
+      "expression": "2020010120200102/10D",
+      "reason": "a date literal is exactly 8 digits, never followed by another digit",
+      "position": 0
+    },
+    {
+      "expression": "E7#2147483648",
+      "reason": "an integer is at most 2147483647",
+      "position": 3
+    },
+    {
+      "expression": "20200101/2147483648D",
+      "reason": "an integer is at most 2147483647",
+      "position": 9
+    },
+    {
+      "expression": "Y1:*/2147483648",
+      "reason": "an integer is at most 2147483647, even where Y strides have no interval ceiling",
+      "position": 5
+    },
+    {
+      "expression": "20200101/1Y/12M",
+      "reason": "different units compare conservatively: 12 months may reach 372 days, a year may be 365",
+      "position": 12
+    },
+    {
+      "expression": " ",
+      "reason": "spaces only — the expression is missing at the end of the input",
+      "position": 1
+    },
+    {
+      "expression": "M3.0",
+      "reason": "a fraction belongs only to a 6-digit T value",
+      "position": 2
+    },
+    {
+      "expression": "M3: 5",
+      "reason": "no space inside a range",
+      "position": 3
+    },
+    {
+      "expression": "M-",
+      "reason": "a sign needs an integer",
+      "position": 2
+    },
+    {
+      "expression": "M--1",
+      "reason": "one sign only",
+      "position": 2
+    },
+    {
+      "expression": "M-*",
+      "reason": "a sign needs an integer",
+      "position": 2
+    },
+    {
+      "expression": "M*-1",
+      "reason": "nothing may follow a bare '*' but a new component",
+      "position": 2
+    },
+    {
+      "expression": "M**",
+      "reason": "the second '*' starts bounds, which need ':' and a date",
+      "position": 3
+    },
+    {
+      "expression": "M!3!",
+      "reason": "'!' only directly after a designator",
+      "position": 3
+    },
+    {
+      "expression": "E1#1,2",
+      "reason": "an ordinal is single, never in a list",
+      "position": 4
+    },
+    {
+      "expression": "E1,2#1",
+      "reason": "an ordinal takes a single value",
+      "position": 4
+    },
+    {
+      "expression": "E1:2#1",
+      "reason": "an ordinal takes a single value",
+      "position": 4
+    },
+    {
+      "expression": "E1#1/2",
+      "reason": "an ordinal takes no stride",
+      "position": 4
+    },
+    {
+      "expression": "E1/2#1",
+      "reason": "a stride takes no ordinal",
+      "position": 4
+    },
+    {
+      "expression": "E1#-",
+      "reason": "a sign needs an integer",
+      "position": 4
+    },
+    {
+      "expression": "T090",
+      "reason": "a time value is 2, 4 or 6 digits",
+      "position": 1
+    },
+    {
+      "expression": "T09000",
+      "reason": "a time value is 2, 4 or 6 digits",
+      "position": 1
+    },
+    {
+      "expression": "T0900-1000",
+      "reason": "T ranges use ':'",
+      "position": 5
+    },
+    {
+      "expression": "T090000.5",
+      "reason": "a fraction is '.' and exactly 3 digits",
+      "position": 7
+    },
+    {
+      "expression": "T090000.5000",
+      "reason": "a fraction is '.' and exactly 3 digits",
+      "position": 7
+    },
+    {
+      "expression": "20240101T12345",
+      "reason": "a date literal's time is hhmm or hhmmss",
+      "position": 0
+    },
+    {
+      "expression": "20240101T1234567",
+      "reason": "a date literal's time is hhmm or hhmmss",
+      "position": 0
+    },
+    {
+      "expression": " | ",
+      "reason": "empty union branch",
+      "position": 1
+    },
+    {
+      "expression": "M3 | | M5",
+      "reason": "empty union branch",
+      "position": 5
+    },
+    {
+      "expression": "M3 |  | M5",
+      "reason": "empty union branch",
+      "position": 6
+    },
+    {
+      "expression": "M11:2/1",
+      "reason": "a wrap range takes no stride — the earliest failing rule wins",
+      "position": 5
+    },
+    {
+      "expression": "Y2020:2019/2",
+      "reason": "Y ranges never wrap — the end is before the start",
+      "position": 6
+    },
+    {
+      "expression": "20200101T120020200102/10D",
+      "reason": "a date literal is never followed by another digit",
+      "position": 0
     }
   ],
   "warnings": [
@@ -1357,6 +1802,82 @@
     {
       "expression": "D30:*/2 M2",
       "warning": "unsatisfiable — a stride is sugar over a range; no February reaches day 30"
+    },
+    {
+      "expression": "M!1:12",
+      "warning": "full-domain exclusion — covers nothing"
+    },
+    {
+      "expression": "E!1:7",
+      "warning": "full-domain exclusion — covers nothing"
+    },
+    {
+      "expression": "M!11:10",
+      "warning": "a wrap exclusion spanning the whole domain"
+    },
+    {
+      "expression": "M!*:*",
+      "warning": "full-domain exclusion — covers nothing"
+    },
+    {
+      "expression": "Y!1:9999",
+      "warning": "full-domain exclusion over the finite year domain"
+    },
+    {
+      "expression": "D92 Q1",
+      "warning": "Q1 has 90 or 91 days"
+    },
+    {
+      "expression": "D-30 M2",
+      "warning": "February has 28 or 29 days, so D-30 never exists"
+    },
+    {
+      "expression": "D-31 M4",
+      "warning": "April has 30 days"
+    },
+    {
+      "expression": "D-1:-2",
+      "warning": "the last day is never on or before the second-to-last, in any month"
+    },
+    {
+      "expression": "W-53 Y2021",
+      "warning": "week-year 2021 has 52 weeks"
+    },
+    {
+      "expression": "M!1:3 Q1",
+      "warning": "the excluded months are exactly Q1's"
+    },
+    {
+      "expression": "M!4:6 Q2",
+      "warning": "the excluded months are exactly Q2's"
+    },
+    {
+      "expression": "M1:2/2 Q2",
+      "warning": "the stride selects January only, outside Q2"
+    },
+    {
+      "expression": "D31 M2,4,6",
+      "warning": "none of the listed months has 31 days"
+    },
+    {
+      "expression": "W53 Y2021:2025",
+      "warning": "no week-year from 2021 to 2025 has 53 weeks (a closed span)"
+    },
+    {
+      "expression": "D366 Y2021,2022",
+      "warning": "neither year is a leap year"
+    },
+    {
+      "expression": "W53 Y2021:2022/2",
+      "warning": "the stride selects 2021 only, which has 52 weeks"
+    },
+    {
+      "expression": "D31 M4:6/2",
+      "warning": "the stride selects April and June, both 30 days"
+    },
+    {
+      "expression": "D366 Y2021:2023/2",
+      "warning": "the stride selects 2021 and 2023, neither a leap year"
     }
   ],
   "quiet": [
@@ -1383,6 +1904,30 @@
     {
       "expression": "H22:6",
       "note": "a true wrap range (literal non-negative endpoints) is never statically empty"
+    },
+    {
+      "expression": "D-29 M2",
+      "note": "leap February: D-29 is day 1"
+    },
+    {
+      "expression": "W-1:52",
+      "note": "in 52-week years W-1 is 52"
+    },
+    {
+      "expression": "D-1:28",
+      "note": "common February: the last day is 28"
+    },
+    {
+      "expression": "M3/3 Q2",
+      "note": "the stride selects June, inside Q2"
+    },
+    {
+      "expression": "W53 Y2020:2021",
+      "note": "2020 has 53 weeks"
+    },
+    {
+      "expression": "M!1:11",
+      "note": "December is left"
     }
   ]
 }
