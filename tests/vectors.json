@@ -1222,6 +1222,15 @@
         "2384-06-01T00:00:00Z": true,
         "2385-06-01T00:00:00Z": false
       }
+    },
+    {
+      "id": "star-then-bounds-without-space",
+      "expression": "M**:20240101",
+      "tz": "UTC",
+      "cases": {
+        "2024-01-01T12:00:00Z": true,
+        "2024-02-01T12:00:00Z": false
+      }
     }
   ],
   "invalid": [
@@ -1809,6 +1818,16 @@
       "expression": "D40 M13",
       "reason": "with the branch complete, D40 is out of the month domain, the earliest error",
       "position": 1
+    },
+    {
+      "expression": "M*,5",
+      "reason": "a bare '*' is the whole domain — nothing follows it in a list",
+      "position": 2
+    },
+    {
+      "expression": "D*:5/2",
+      "reason": "a stride needs an explicit start",
+      "position": 4
     }
   ],
   "warnings": [
