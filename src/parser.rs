@@ -20,18 +20,21 @@ pub fn parse_branches(input: &str) -> Result<(Vec<Expr>, Vec<Warning>), ParseErr
         b: input.as_bytes(),
         i: 0,
         fault: None,
+        seen: 0,
     };
     let mut branches = Vec::new();
     let mut warnings = Vec::new();
     loop {
         let expr = p.parse_expression().map_err(|e| p.earliest(e))?;
         // The `D` domain waits for the completed branch's scope; of everything
-        // the branch broke, the earliest position wins.
-        let checked = validate::check(&expr);
+        // the branch broke, the earliest position wins. The warnings read a
+        // branch that broke no rule, never one holding a value its rules reject.
+        let days = validate::check_days(&expr);
         if let Some(fault) = p.fault.take() {
-            return Err(earliest(fault, checked.err()));
+            return Err(earliest(fault, days.err()));
         }
-        warnings.extend(checked?);
+        days?;
+        warnings.extend(validate::warnings(&expr));
         branches.push(expr);
         p.skip_spaces();
         if p.peek() == Some(b'|') {
@@ -53,6 +56,9 @@ struct Parser<'a> {
     /// text, and found later, is the one reported (spec §8, *Error
     /// positions*). Only a token the grammar cannot accept stops it.
     fault: Option<ParseError>,
+    /// The designators the branch has read so far, one bit each, so that a
+    /// repeat is found without rescanning the branch.
+    seen: u16,
 }
 
 struct TimeVal {
@@ -154,6 +160,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expression(&mut self) -> Result<Expr, ParseError> {
         let mut expr = Expr::default();
+        self.seen = 0;
         let mut n = 0;
         loop {
             self.skip_spaces();
@@ -167,7 +174,7 @@ impl<'a> Parser<'a> {
         if n == 0 {
             return Err(ParseError::new(self.i, "empty expression"));
         }
-        expr.has_week = expr.selectors.iter().any(|s| s.desig == Desig::Week);
+        expr.has_week = self.seen & desig_bit(Desig::Week) != 0;
         Ok(expr)
     }
 
@@ -206,7 +213,7 @@ impl<'a> Parser<'a> {
         if self.peek() == Some(b'!') {
             self.bump();
             exclude = true;
-            (atoms, at) = build_atoms(self.parse_items()?, true)?;
+            (atoms, at) = self.read_list(desig, true, None)?;
             if self.peek() == Some(b'/') {
                 return Err(ParseError::new(
                     self.i,
@@ -218,7 +225,7 @@ impl<'a> Parser<'a> {
             self.bump();
             atoms = vec![Atom::All];
         } else {
-            let first = self.parse_item()?;
+            let first = self.parse_item(desig)?;
             match self.peek() {
                 Some(b'/') => {
                     interval_at = self.i + 1;
@@ -252,24 +259,17 @@ impl<'a> Parser<'a> {
                     at = vec![first.at];
                     atoms = Vec::new();
                 }
-                Some(b',') => {
-                    let mut items = vec![first];
-                    while self.peek() == Some(b',') {
-                        self.bump();
-                        items.push(self.parse_item()?);
-                    }
+                _ => {
+                    // The first item is never a bare `*` (a lone `*` is
+                    // handled above), so it always has an atom.
+                    let atom = atom_of(first.raw).unwrap();
+                    (atoms, at) = self.read_list(desig, false, Some((atom, first.at)))?;
                     if self.peek() == Some(b'/') {
                         return Err(ParseError::new(
                             self.i,
                             "a stride attaches to a single value or range, not a list",
                         ));
                     }
-                    (atoms, at) = build_atoms(items, false)?;
-                }
-                _ => {
-                    // A single item never trips the bare-`*`-in-a-list guard (a
-                    // lone `*` is handled above), so this is infallible.
-                    (atoms, at) = build_atoms(vec![first], false).unwrap();
                 }
             }
         }
@@ -283,27 +283,63 @@ impl<'a> Parser<'a> {
             at,
             interval_at,
         };
-        // Checked once the selector is read: its values compete with a grammar
-        // error later in the branch, and a malformed repeat fails on its own
-        // syntax first (spec §8, *Error positions*).
-        if let Err(e) = validate::check_read(&sel) {
-            self.fault(e.pos, &e.message);
-        }
-        if expr.selectors.iter().any(|s| s.desig == desig) {
+        // A repeat is a rule between two designators, decided once the second
+        // is read, so it fails on its own syntax first (spec §8).
+        if self.seen & desig_bit(desig) != 0 {
             self.fault(pos, "duplicate designator in one expression");
         }
+        self.seen |= desig_bit(desig);
         expr.selectors.push(sel);
         Ok(())
     }
 
-    /// A value list: one or more items separated by `,`.
-    fn parse_items(&mut self) -> Result<Vec<Item>, ParseError> {
-        let mut items = vec![self.parse_item()?];
-        while self.peek() == Some(b',') {
+    /// A value list: one or more items separated by `,`, after `first` when
+    /// it has been read already.
+    fn read_list(
+        &mut self,
+        desig: Desig,
+        exclude: bool,
+        first: Option<(Atom, (usize, usize))>,
+    ) -> Result<Atoms, ParseError> {
+        let (mut atoms, mut at) = (Vec::new(), Vec::new());
+        let mut item = match first {
+            Some(item) => item,
+            None => self.list_item(desig, exclude)?,
+        };
+        loop {
+            atoms.push(item.0);
+            at.push(item.1);
+            if self.peek() != Some(b',') {
+                return Ok((atoms, at));
+            }
             self.bump();
-            items.push(self.parse_item()?);
+            item = self.list_item(desig, exclude)?;
         }
-        Ok(items)
+    }
+
+    /// A list item, with where its values begin. A bare `*` is never a list
+    /// item (spec §3): a list holding it is the whole domain, and an exclusion
+    /// takes a value list (`M!*` is an error, `M!*:*` a range). It breaks a
+    /// rule, decided at the token after it once that is not the `:` of a
+    /// range (spec §8): the error names the `*`, and the list reads on.
+    fn list_item(
+        &mut self,
+        desig: Desig,
+        exclude: bool,
+    ) -> Result<(Atom, (usize, usize)), ParseError> {
+        let item = self.parse_item(desig)?;
+        let atom = atom_of(item.raw).unwrap_or_else(|| {
+            self.fault(
+                item.at.0,
+                if exclude {
+                    "an exclusion takes a value list, not a bare '*' — '!*:*' excludes the whole domain"
+                } else {
+                    "bare '*' in a list — the list is already the whole domain"
+                },
+            );
+            Atom::All
+        });
+        Ok((atom, item.at))
     }
 
     fn build_stride(&mut self, desig: Desig, first: Item) -> Result<Atom, ParseError> {
@@ -321,15 +357,11 @@ impl<'a> Parser<'a> {
                         1 // in every domain, so it breaks no rule of its own
                     }
                 };
-                // A wrap range takes no stride; on Y the range itself is wrong,
-                // since years cannot wrap.
+                // A wrap range takes no stride. On Y the range itself is
+                // wrong, which its end, before the '/', already recorded.
                 if let Endpoint::Value(e) = end {
                     if s >= 0 && e >= 0 && s > e {
-                        if desig == Desig::Year {
-                            self.fault(first.at.1, "Y range cannot wrap — no edge to wrap around");
-                        } else {
-                            self.fault(stride_pos, "wrap ranges take no stride");
-                        }
+                        self.fault(stride_pos, "wrap ranges take no stride");
                     }
                 }
                 (s, end)
@@ -353,6 +385,9 @@ impl<'a> Parser<'a> {
         if interval < 2 {
             self.fault(interval_pos, "stride interval must be >= 2");
         }
+        if let Err(e) = validate::check_interval(desig, interval, interval_pos) {
+            self.fault(e.pos, &e.message);
+        }
         let duration = if self.peek() == Some(b'/') {
             self.bump();
             let duration_pos = self.i;
@@ -372,14 +407,22 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse a single value-list item: value, `*`, or a range.
-    fn parse_item(&mut self) -> Result<Item, ParseError> {
+    /// Parse a single value-list item: value, `*`, or a range. Each value is
+    /// checked against `desig`'s domain as it is read (spec §8).
+    fn parse_item(&mut self, desig: Desig) -> Result<Item, ParseError> {
         let start_pos = self.i;
-        let start = self.parse_endpoint()?;
+        let start = self.parse_endpoint(desig)?;
         if self.peek() == Some(b':') {
             self.bump();
             let end_pos = self.i;
-            let end = self.parse_endpoint()?;
+            let end = self.parse_endpoint(desig)?;
+            // Years have no edge to wrap around: a range end before its start
+            // is wrong at the end.
+            if let (Desig::Year, Endpoint::Value(s), Endpoint::Value(e)) = (desig, start, end) {
+                if s > e {
+                    self.fault(end_pos, "Y range cannot wrap — no edge to wrap around");
+                }
+            }
             return Ok(Item {
                 raw: Raw::Range { start, end },
                 at: (start_pos, end_pos),
@@ -395,13 +438,17 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_endpoint(&mut self) -> Result<Endpoint, ParseError> {
+    fn parse_endpoint(&mut self, desig: Desig) -> Result<Endpoint, ParseError> {
         if self.peek() == Some(b'*') {
             self.bump();
-            Ok(Endpoint::Star)
-        } else {
-            Ok(Endpoint::Value(self.read_int_signed()?))
+            return Ok(Endpoint::Star);
         }
+        let pos = self.i;
+        let v = self.read_int_signed()?;
+        if let Err(e) = validate::check_value(desig, v, pos) {
+            self.fault(e.pos, &e.message);
+        }
+        Ok(Endpoint::Value(v))
     }
 
     // ---- time (T) --------------------------------------------------------
@@ -466,117 +513,91 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// A time value and its fraction. A value the rules reject (a malformed
+    /// one included) is recorded at its token and read past, its fraction
+    /// whole, so that the branch reads on (spec §8, *Error positions*); only a
+    /// missing value is a grammar error.
     fn parse_timeval(&mut self, allow_2400: bool) -> Result<TimeVal, ParseError> {
         let pos = self.i;
-        let mut digits = Vec::new();
-        while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
-                digits.push(c - b'0');
-                self.bump();
+        let digits = self.digit_run();
+        if digits.is_empty() {
+            return Err(ParseError::new(pos, "malformed time value"));
+        }
+        // The fraction is a token of its own, from its '.' (spec §8): exactly
+        // 3 digits, after the 6 of hhmmss.
+        let dotted = self.peek() == Some(b'.');
+        let frac = if dotted {
+            let frac_pos = self.i;
+            self.bump();
+            let frac = self.digit_run();
+            if digits.len() != 6 || frac.len() != 3 {
+                self.fault(
+                    frac_pos,
+                    "a fraction is '.' and 3 digits, after hhmmss only",
+                );
+                None
             } else {
-                break;
+                Some(self.number(frac))
             }
+        } else {
+            None
+        };
+        let two = |p: &Self, k: usize| p.number(digits.start + k..digits.start + k + 2);
+        let (hh, mm, ss, unit) = match digits.len() {
+            2 => (two(self, 0), 0, 0, MS_PER_HOUR),
+            4 => (two(self, 0), two(self, 2), 0, MS_PER_MIN),
+            6 => (two(self, 0), two(self, 2), two(self, 4), MS_PER_SEC),
+            _ => {
+                self.fault(pos, "malformed time value");
+                (0, 0, 0, MS_PER_SEC)
+            }
+        };
+        // `2400` is the exact token, never `24` or a `2400` with a fraction.
+        if digits.len() == 4 && hh == 24 && mm == 0 && !dotted {
+            if !allow_2400 {
+                self.fault(pos, "'2400' is valid only in range-end position");
+            }
+            return Ok(TimeVal {
+                ms: MS_PER_DAY,
+                unit: 0,
+                is_2400: true,
+            });
         }
-        let n = digits.len();
-        let two = |a: usize, d: &[u8]| i64::from(d[a]) * 10 + i64::from(d[a + 1]);
-        match n {
-            2 => {
-                let hh = two(0, &digits);
-                if hh > 23 {
-                    self.fault(pos, "hour out of range in time value");
-                }
-                Ok(TimeVal {
-                    ms: hh * MS_PER_HOUR,
-                    unit: MS_PER_HOUR,
-                    is_2400: false,
-                })
-            }
-            4 => {
-                let hh = two(0, &digits);
-                let mm = two(2, &digits);
-                if hh == 24 && mm == 0 {
-                    if !allow_2400 {
-                        self.fault(pos, "'2400' is valid only in range-end position");
-                    }
-                    return Ok(TimeVal {
-                        ms: MS_PER_DAY,
-                        unit: 0,
-                        is_2400: true,
-                    });
-                }
-                if hh > 23 {
-                    self.fault(
-                        pos,
-                        "hour out of range — 24 exists only as the exact token '2400'",
-                    );
-                }
-                if mm > 59 {
-                    self.fault(pos, "minute out of range in time value");
-                }
-                Ok(TimeVal {
-                    ms: hh * MS_PER_HOUR + mm * MS_PER_MIN,
-                    unit: MS_PER_MIN,
-                    is_2400: false,
-                })
-            }
-            6 => {
-                let hh = two(0, &digits);
-                let mm = two(2, &digits);
-                let ss = two(4, &digits);
-                if hh > 23 {
-                    self.fault(
-                        pos,
-                        "hour out of range — 24 exists only as the exact token '2400'",
-                    );
-                }
-                if mm > 59 {
-                    self.fault(pos, "minute out of range in time value");
-                }
-                if ss > 59 {
-                    self.fault(
-                        pos,
-                        "second out of range (leap seconds are not representable)",
-                    );
-                }
-                let mut ms = hh * MS_PER_HOUR + mm * MS_PER_MIN + ss * MS_PER_SEC;
-                let mut unit = MS_PER_SEC;
-                if self.peek() == Some(b'.') {
-                    // The fraction is a token of its own, from its '.' (spec §8).
-                    let frac_pos = self.i;
-                    self.bump();
-                    let mut frac = Vec::new();
-                    while let Some(c) = self.peek() {
-                        if c.is_ascii_digit() {
-                            frac.push(c - b'0');
-                            self.bump();
-                        } else {
-                            break;
-                        }
-                    }
-                    if frac.len() != 3 {
-                        return Err(ParseError::new(
-                            frac_pos,
-                            "millisecond precision requires exactly 3 digits",
-                        ));
-                    }
-                    ms += i64::from(frac[0]) * 100 + i64::from(frac[1]) * 10 + i64::from(frac[2]);
-                    unit = 1;
-                }
-                Ok(TimeVal {
-                    ms,
-                    unit,
-                    is_2400: false,
-                })
-            }
-            _ => Err(ParseError::new(pos, "malformed time value")),
+        if hh > 23 {
+            self.fault(
+                pos,
+                "hour out of range — 24 exists only as the exact token '2400'",
+            );
         }
+        if mm > 59 {
+            self.fault(pos, "minute out of range in time value");
+        }
+        if ss > 59 {
+            self.fault(
+                pos,
+                "second out of range (leap seconds are not representable)",
+            );
+        }
+        let ms = hh * MS_PER_HOUR + mm * MS_PER_MIN + ss * MS_PER_SEC;
+        Ok(match frac {
+            Some(f) => TimeVal {
+                ms: ms + f,
+                unit: 1,
+                is_2400: false,
+            },
+            None => TimeVal {
+                ms,
+                unit,
+                is_2400: false,
+            },
+        })
     }
 
     // ---- date-started components: cadence or bounds ----------------------
 
     fn parse_date_component(&mut self, expr: &mut Expr) -> Result<(), ParseError> {
         let pos = self.i;
-        let date = self.parse_date()?;
+        let date = self.scan_date();
         if self.peek() == Some(b'/') {
             self.parse_cadence(expr, date, pos)
         } else {
@@ -600,7 +621,7 @@ impl<'a> Parser<'a> {
                 "bounds require at least one date-literal endpoint",
             ));
         }
-        let end = self.parse_date()?;
+        let end = self.expect_date()?;
         if expr.bounds.is_some() {
             self.fault(pos, "more than one bounds component per expression");
         }
@@ -625,7 +646,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 (Some(start.span_start()), None)
             } else {
-                let end = self.parse_date()?;
+                let end = self.expect_date()?;
                 (Some(start.span_start()), Some(end.span_end()))
             }
         } else {
@@ -710,72 +731,82 @@ impl<'a> Parser<'a> {
         Ok((n, unit))
     }
 
-    fn parse_date(&mut self) -> Result<DateLit, ParseError> {
-        let pos = self.i;
-        let mut digs = [0i64; 8];
-        for slot in &mut digs {
-            match self.peek() {
-                Some(c) if c.is_ascii_digit() => {
-                    *slot = i64::from(c - b'0');
-                    self.bump();
-                }
-                _ => return Err(ParseError::new(pos, "date literal requires 8 digits")),
-            }
+    /// A date literal where one is required: a missing one is a grammar
+    /// error at the token in its place.
+    fn expect_date(&mut self) -> Result<DateLit, ParseError> {
+        if !self.peek().is_some_and(|c| c.is_ascii_digit()) {
+            return Err(ParseError::new(self.i, "date literal requires 8 digits"));
         }
-        // Exactly 8 digits: a ninth is no second literal (spec §8).
-        if self.peek().is_some_and(|c| c.is_ascii_digit()) {
-            return Err(ParseError::new(
-                pos,
-                "date literal is exactly 8 digits, never followed by another digit",
-            ));
-        }
-        let y = digs[0] * 1000 + digs[1] * 100 + digs[2] * 10 + digs[3];
-        let m = digs[4] * 10 + digs[5];
-        let d = digs[6] * 10 + digs[7];
-        if !valid_date(y, m, d) {
-            self.fault(pos, "date literal is not a real calendar date");
-        }
-        let time = if self.peek() == Some(b'T') {
-            self.bump();
-            Some(self.parse_date_time(pos)?)
-        } else {
-            None
-        };
-        Ok(DateLit { y, m, d, time })
+        Ok(self.scan_date())
     }
 
-    fn parse_date_time(&mut self, pos: usize) -> Result<TimePart, ParseError> {
-        // The T-glue is unconditional: exactly 4 digits (hhmm), optionally 6 (hhmmss).
-        let mut digs = Vec::new();
-        while let Some(c) = self.peek() {
-            if c.is_ascii_digit() {
-                digs.push(i64::from(c - b'0'));
-                self.bump();
-            } else {
-                break;
-            }
-        }
-        if digs.len() != 4 && digs.len() != 6 {
-            return Err(ParseError::new(pos, "malformed time-part in date literal"));
-        }
-        let h = digs[0] * 10 + digs[1];
-        let mi = digs[2] * 10 + digs[3];
-        if h > 23 || mi > 59 {
-            self.fault(pos, "time-part out of range in date literal");
-        }
-        let s = if digs.len() == 6 {
-            let sec = digs[4] * 10 + digs[5];
-            if sec > 59 {
-                self.fault(pos, "seconds out of range in date literal");
-            }
-            Some(sec)
+    /// A date literal at the cursor, which is a digit. One the rules reject,
+    /// its shape included, is recorded at its first character and read past,
+    /// its digit runs and `T` part whole, so that the branch reads on (spec
+    /// §8, *Error positions*); it then stands for 0001-01-01, which breaks no
+    /// rule of its own.
+    fn scan_date(&mut self) -> DateLit {
+        const NO_DATE: DateLit = DateLit {
+            y: 1,
+            m: 1,
+            d: 1,
+            time: None,
+        };
+        let pos = self.i;
+        let digits = self.digit_run();
+        // The T-glue is unconditional: a `T` after the digits is the literal's.
+        let time = if self.peek() == Some(b'T') {
+            self.bump();
+            Some(self.digit_run())
         } else {
             None
         };
-        Ok(TimePart { h, mi, s })
+        // Exactly 8 digits (a ninth is no second literal), and a time part of
+        // hhmm or hhmmss (spec §8).
+        if digits.len() != 8 || time.as_ref().is_some_and(|t| t.len() != 4 && t.len() != 6) {
+            self.fault(
+                pos,
+                "malformed date literal — exactly 8 digits, its time part hhmm or hhmmss",
+            );
+            return NO_DATE;
+        }
+        let at = |p: &Self, k: usize, n: usize| p.number(pos + k..pos + k + n);
+        let (y, m, d) = (at(self, 0, 4), at(self, 4, 2), at(self, 6, 2));
+        if !valid_date(y, m, d) {
+            self.fault(pos, "date literal is not a real calendar date");
+            return NO_DATE;
+        }
+        let time = time.map(|t| TimePart {
+            h: self.number(t.start..t.start + 2),
+            mi: self.number(t.start + 2..t.start + 4),
+            s: (t.len() == 6).then(|| self.number(t.start + 4..t.end)),
+        });
+        if let Some(tp) = &time {
+            if tp.h > 23 || tp.mi > 59 || tp.s.is_some_and(|s| s > 59) {
+                self.fault(pos, "time-part out of range in date literal");
+                return NO_DATE;
+            }
+        }
+        DateLit { y, m, d, time }
     }
 
     // ---- primitive readers ----------------------------------------------
+
+    /// The run of ASCII digits at the cursor, read past.
+    fn digit_run(&mut self) -> std::ops::Range<usize> {
+        let start = self.i;
+        while self.peek().is_some_and(|c| c.is_ascii_digit()) {
+            self.i += 1;
+        }
+        start..self.i
+    }
+
+    /// The decimal value of a short run of digits.
+    fn number(&self, digits: std::ops::Range<usize>) -> i64 {
+        self.b[digits]
+            .iter()
+            .fold(0, |v, &c| v * 10 + i64::from(c - b'0'))
+    }
 
     /// A value: an integer with an optional sign, the sign part of its token.
     fn read_int_signed(&mut self) -> Result<i64, ParseError> {
@@ -831,36 +862,22 @@ struct Item {
 /// Atoms with their value positions alongside ([`Selector::at`]).
 type Atoms = (Vec<Atom>, Vec<(usize, usize)>);
 
-/// Turn list items into atoms, with their value positions alongside. A bare
-/// `*` is never a list item (spec §3): a list holding it is the whole domain,
-/// and an exclusion takes a value list (`M!*` is an error, `M!*:*` a range),
-/// so the error names the `*`.
-fn build_atoms(items: Vec<Item>, exclude: bool) -> Result<Atoms, ParseError> {
-    let mut atoms = Vec::with_capacity(items.len());
-    let mut at = Vec::with_capacity(items.len());
-    for it in items {
-        atoms.push(match it.raw {
-            Raw::Star if exclude => {
-                return Err(ParseError::new(
-                    it.at.0,
-                    "an exclusion takes a value list, not a bare '*' — '!*:*' excludes the whole domain",
-                ))
-            }
-            Raw::Star => {
-                return Err(ParseError::new(
-                    it.at.0,
-                    "bare '*' in a list — the list is already the whole domain",
-                ))
-            }
-            Raw::Value(v) => Atom::Single(v),
-            Raw::Range { start, end } => {
-                let wrap = matches!((start, end), (Endpoint::Value(s), Endpoint::Value(e)) if s >= 0 && e >= 0 && s > e);
-                Atom::Range { start, end, wrap }
-            }
-        });
-        at.push(it.at);
+/// The atom a list item stands for; `None` for a bare `*`, which stands for
+/// none (see [`Parser::list_item`]).
+fn atom_of(raw: Raw) -> Option<Atom> {
+    match raw {
+        Raw::Star => None,
+        Raw::Value(v) => Some(Atom::Single(v)),
+        Raw::Range { start, end } => {
+            let wrap = matches!((start, end), (Endpoint::Value(s), Endpoint::Value(e)) if s >= 0 && e >= 0 && s > e);
+            Some(Atom::Range { start, end, wrap })
+        }
     }
-    Ok((atoms, at))
+}
+
+/// A designator's bit in [`Parser::seen`].
+fn desig_bit(d: Desig) -> u16 {
+    1 << d as u16
 }
 
 fn designator(c: u8) -> Option<Desig> {
@@ -917,6 +934,7 @@ mod tests {
             b: b"",
             i: 0,
             fault: None,
+            seen: 0,
         };
         let star = Item {
             raw: Raw::Star,

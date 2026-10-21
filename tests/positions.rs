@@ -100,3 +100,97 @@ fn a_grammar_error_after_a_broken_rule_names_the_rule() {
     err_at("20230229 *", 0);
     err_at("E7#9 |", 3);
 }
+
+/// A branch that broke a rule is never evaluated for its warnings: a stride
+/// of 0 would divide by zero, a year the rules reject would empty the year
+/// span, and these all panicked before.
+#[test]
+fn a_rejected_value_never_reaches_the_warnings() {
+    for (expr, pos) in [
+        ("D1/0", 3),
+        ("M1/0", 3),
+        ("Y1:9999/0", 8),
+        ("D1/00", 3),
+        ("D366 Y-1", 6),
+        ("W53 Y-1", 5),
+        ("Y1001:2W53", 6),
+        ("Y2020:2019 D366", 6),
+        ("W53 Y-1:-1", 5),
+    ] {
+        err_at(expr, pos);
+        assert_eq!(dtrexp::validate(expr).unwrap_err().pos, pos, "`{expr}`");
+    }
+}
+
+#[test]
+fn a_bare_star_in_a_list_is_decided_at_the_token_after_it() {
+    err_at("M1,*,X", 3);
+    err_at("M!*,X", 2);
+    err_at("M!3,*,X", 4);
+    // a rule error, so the waiting `D` check is earlier at the branch's end
+    err_at("D40,*", 1);
+}
+
+#[test]
+fn a_malformed_literal_time_value_or_fraction_is_a_rule_error() {
+    err_at("D40 20180120T09", 1);
+    err_at("D40 2020", 1);
+    err_at("D40 201801201", 1);
+    err_at("D40 T090", 1);
+    err_at("D40 T1", 1);
+    err_at("D40 T0900.5", 1);
+    err_at("D40 T090000.5", 1);
+    err_at("D40 T2400.000", 1);
+    // each is named at its own token, read past whole
+    err_at("T0900.5 X", 5);
+    err_at("T090.500 X", 1);
+    err_at("T0900:2400.000", 6);
+    err_at("2020 X", 0);
+    err_at("20200101T9 X", 0);
+    err_at("20200101:2020 X", 9);
+}
+
+#[test]
+fn a_value_is_decided_as_it_is_read_not_when_its_selector_ends() {
+    err_at("M13,X", 1);
+    err_at("E12,E", 1);
+    err_at("H0/40/", 3);
+    err_at("Y2020:2010,", 6);
+    // a range of one year is no wrap
+    assert!(parse("Y2020:2020").is_ok());
+    err_at("M!0,", 2);
+}
+
+/// A long input that breaks a rule early is still read to its end, in time
+/// linear in its length: each selector is checked once, never against the
+/// whole branch before it.
+#[test]
+fn reading_on_after_an_error_is_linear() {
+    let input = "D1 ".repeat(200_000);
+    let start = std::time::Instant::now();
+    err_at(&input, 3);
+    let elapsed = start.elapsed();
+    assert!(elapsed.as_secs() < 5, "200,000 selectors took {elapsed:?}");
+}
+
+/// Only a `D` selector waits for its branch: its values and its stride
+/// interval are checked against the scope once the branch is complete.
+#[test]
+fn a_d_selector_is_checked_when_its_branch_is_complete() {
+    assert!(parse("D* M2").is_ok());
+    assert!(parse("D*:5").is_ok());
+    err_at("D*:32", 3);
+    assert!(parse("D1:5 D*").is_err());
+    err_at("D40:41", 1);
+    err_at("D1:40/2", 3);
+    err_at("D1/40", 3);
+    err_at("D1/32 M1", 3);
+    assert!(parse("D1/32 Y*").is_ok());
+}
+
+#[test]
+fn a_missing_time_value_is_a_grammar_error() {
+    err_at("D40 T,0900", 5);
+    err_at("D40 T0900,", 10);
+    err_at("D40 T0900:", 10);
+}

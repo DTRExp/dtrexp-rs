@@ -208,8 +208,11 @@ impl Tz {
                 } else {
                     self.transitions[i - 1].1
                 };
-                let gap_start = tt * MS_PER_SEC + i64::from(off_before) * MS_PER_SEC;
-                let gap_end = tt * MS_PER_SEC + i64::from(off_after) * MS_PER_SEC;
+                // A transition time is any 64-bit second; saturated, one past
+                // the millisecond range leaves an empty window.
+                let at = tt.saturating_mul(MS_PER_SEC);
+                let gap_start = at.saturating_add(i64::from(off_before) * MS_PER_SEC);
+                let gap_end = at.saturating_add(i64::from(off_after) * MS_PER_SEC);
                 (off_after > off_before && local_ms >= gap_start && local_ms < gap_end)
                     .then_some(local_ms - i64::from(off_before) * MS_PER_SEC)
             })
@@ -399,26 +402,35 @@ fn read_counts(d: &[u8], pos: usize) -> Result<Counts, String> {
     })
 }
 
-/// Size in bytes of a TZif data block for the given time width (4 or 8).
-fn block_size(c: &Counts, time_size: usize, leap_time_size: usize) -> usize {
-    c.timecnt * time_size
-        + c.timecnt
-        + c.typecnt * 6
-        + c.charcnt
-        + c.leapcnt * (leap_time_size + 4)
-        + c.isstdcnt
-        + c.isutcnt
+/// Size in bytes of a TZif data block for the given time width (4 or 8). In
+/// 64 bits, where no count a header can hold overflows it, whatever the
+/// target's address width.
+fn block_size(c: &Counts, time_size: u64) -> u64 {
+    let n = |count: usize| count as u64;
+    n(c.timecnt) * (time_size + 1)
+        + n(c.typecnt) * 6
+        + n(c.charcnt)
+        + n(c.leapcnt) * (time_size + 4)
+        + n(c.isstdcnt)
+        + n(c.isutcnt)
 }
 
-fn parse_body(
-    d: &[u8],
-    start: usize,
-    time_size: usize,
-    c: &Counts,
-) -> Result<(Vec<(i64, i32)>, i32), String> {
-    if d.len() < start + block_size(c, time_size, time_size) {
+/// Where a data block of `c`'s counts that starts at `start` ends, when the
+/// buffer holds all of it.
+fn block_end(d: &[u8], start: usize, c: &Counts, time_size: u64) -> Result<usize, String> {
+    let end = start as u64 + block_size(c, time_size);
+    if end > d.len() as u64 {
         return Err("truncated TZif file".to_string());
     }
+    Ok(end as usize)
+}
+
+/// A data block read: its transitions (time, offset), the offset before the
+/// first of them, and where the block ends.
+type Body = (Vec<(i64, i32)>, i32, usize);
+
+fn parse_body(d: &[u8], start: usize, time_size: usize, c: &Counts) -> Result<Body, String> {
+    let end = block_end(d, start, c, time_size as u64)?;
     let mut p = start;
     let mut times: Vec<i64> = Vec::with_capacity(c.timecnt);
     for _ in 0..c.timecnt {
@@ -442,17 +454,24 @@ fn parse_body(
     if utoff.is_empty() {
         return Err("TZif file has no local time types".to_string());
     }
+    // RFC 8536 §3.2: transition times ascend, and each names a local time
+    // type the file defines. A file that breaks either is corrupt.
+    if times.windows(2).any(|w| w[0] >= w[1]) {
+        return Err("TZif transition times do not ascend".to_string());
+    }
     let mut transitions: Vec<(i64, i32)> = Vec::with_capacity(c.timecnt);
-    for i in 0..c.timecnt {
-        let ti = type_idx[i] as usize;
-        transitions.push((times[i], utoff[ti]));
+    for (&t, &ti) in times.iter().zip(type_idx) {
+        let off = utoff
+            .get(usize::from(ti))
+            .ok_or_else(|| "TZif transition names an undefined local time type".to_string())?;
+        transitions.push((t, *off));
     }
     // Offset before the first transition: first standard-time type, else type 0.
     let first_offset = (0..c.typecnt)
         .find(|&i| !isdst[i])
         .map(|i| utoff[i])
         .unwrap_or(utoff[0]);
-    Ok((transitions, first_offset))
+    Ok((transitions, first_offset, end))
 }
 
 fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
@@ -461,11 +480,11 @@ fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
     if version == b'2' || version == b'3' {
         // Skip the 32-bit v1 block, then parse the 64-bit v2/v3 block and the
         // TZ string footer after it.
-        let v1_body = 44 + block_size(&c1, 4, 4);
+        let v1_body = block_end(d, 44, &c1, 4)?;
         let c2 = read_counts(d, v1_body)?;
         let v2_body_start = v1_body + 44;
-        let (transitions, first_offset) = parse_body(d, v2_body_start, 8, &c2)?;
-        let footer = footer::read(&d[v2_body_start + block_size(&c2, 8, 8)..])?;
+        let (transitions, first_offset, end) = parse_body(d, v2_body_start, 8, &c2)?;
+        let footer = footer::read(&d[end..])?;
         Ok(Tz::table(
             name.to_string(),
             transitions,
@@ -473,7 +492,7 @@ fn parse_tzif(d: &[u8], name: &str) -> Result<Tz, String> {
             footer,
         ))
     } else {
-        let (transitions, first_offset) = parse_body(d, 44, 4, &c1)?;
+        let (transitions, first_offset, _) = parse_body(d, 44, 4, &c1)?;
         Ok(Tz::table(name.to_string(), transitions, first_offset, None))
     }
 }
@@ -946,6 +965,69 @@ mod tests {
         d.extend_from_slice(&header(b'2', 0, 0)); // empty second block
         let err = parse_tzif(&d, "x").unwrap_err();
         assert!(err.contains("no local time types"));
+    }
+
+    /// A version-2 buffer: an empty v1 block, then a 64-bit block of the
+    /// given transitions (time, type index) over a STD type 0 and a DST
+    /// type 1 one hour ahead, and an empty footer.
+    fn v2_tzif(transitions: &[(i64, u8)]) -> Vec<u8> {
+        let mut d = header(b'2', 0, 0);
+        d.extend_from_slice(&header(b'2', transitions.len() as u32, 2));
+        for &(t, _) in transitions {
+            d.extend_from_slice(&t.to_be_bytes());
+        }
+        d.extend(transitions.iter().map(|&(_, ti)| ti));
+        d.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // type 0: UTC, standard
+        d.extend_from_slice(&3600i32.to_be_bytes());
+        d.extend_from_slice(&[1, 0]); // type 1: +01:00, DST
+        d.extend_from_slice(b"\n\n");
+        d
+    }
+
+    #[test]
+    fn a_transition_to_an_undefined_type_is_an_error() {
+        let mut d = v1_tzif(0, 3600);
+        d[48] = 2; // the transition's type index, past the 2 types
+        let err = parse_tzif(&d, "x").unwrap_err();
+        assert_eq!(err, "TZif transition names an undefined local time type");
+        let err = parse_tzif(&v2_tzif(&[(0, 255)]), "x").unwrap_err();
+        assert_eq!(err, "TZif transition names an undefined local time type");
+        // The last defined type is still one.
+        assert!(parse_tzif(&v2_tzif(&[(0, 1)]), "x").is_ok());
+    }
+
+    #[test]
+    fn transition_times_that_do_not_ascend_are_an_error() {
+        for times in [[(10, 1), (10, 0)], [(10, 1), (5, 0)]] {
+            let err = parse_tzif(&v2_tzif(&times), "x").unwrap_err();
+            assert_eq!(err, "TZif transition times do not ascend");
+        }
+        assert!(parse_tzif(&v2_tzif(&[(5, 0), (10, 1)]), "x").is_ok());
+    }
+
+    #[test]
+    fn a_transition_beyond_the_millisecond_range_resolves_a_gap() {
+        // The first transition, at the earliest 64-bit second, is out of the
+        // millisecond range; the gap search passes over it to the epoch's.
+        for first in [i64::MIN, i64::MIN / 2] {
+            let tz = parse_tzif(&v2_tzif(&[(first, 0), (0, 1)]), "x").unwrap();
+            assert_eq!(tz.local_to_instant_ms(1_800_000), 1_800_000);
+        }
+        // One at the latest second leaves the gap before it to its neighbor.
+        let tz = parse_tzif(&v2_tzif(&[(0, 1), (i64::MAX, 0)]), "x").unwrap();
+        assert_eq!(tz.local_to_instant_ms(1_800_000), 1_800_000);
+    }
+
+    #[test]
+    fn counts_past_the_buffer_are_a_truncated_file() {
+        // Counts at their 32-bit maximum, whose block size overflows a
+        // 32-bit address space, are just a file too short to hold them.
+        let mut d = header(b'2', u32::MAX, u32::MAX);
+        d.extend_from_slice(&[0u8; 64]);
+        assert_eq!(parse_tzif(&d, "x").unwrap_err(), "truncated TZif file");
+        let mut d = header(b'2', 0, 0);
+        d.extend_from_slice(&header(b'2', u32::MAX, u32::MAX));
+        assert_eq!(parse_tzif(&d, "x").unwrap_err(), "truncated TZif file");
     }
 }
 

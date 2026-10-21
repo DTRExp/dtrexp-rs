@@ -277,3 +277,32 @@ fn disjoint_warning_points_at_the_month_selector() {
     assert_eq!(w.len(), 1);
     assert_eq!(w[0].pos, 3, "the warning should anchor to M, not Q");
 }
+
+/// What an instant outside years 1-9999 covers is not specified (spec §3.1):
+/// every one a day or more past the edge covers nothing, and no instant, in
+/// any zone, overflows the evaluation.
+#[test]
+fn an_instant_past_the_timeline_covers_nothing_and_never_panics() {
+    let start = -62_135_683_200_000; // 0000-12-31T00:00Z
+    let end = 253_402_387_200_000; // 10000-01-02T00:00Z
+    let all = parse("M*").unwrap();
+    assert!(all.covers(start, "UTC").unwrap());
+    assert!(!all.covers(start - 1, "UTC").unwrap());
+    assert!(all.covers(end - 1, "UTC").unwrap());
+    assert!(!all.covers(end, "UTC").unwrap());
+    for expr in [
+        "M*",
+        "M3",
+        "T0900:1800 E1:5 D-1",
+        "20200101/2H",
+        "20200101/1M/1D",
+        "20200101:*",
+    ] {
+        let e = parse(expr).unwrap();
+        for t in [i64::MIN, i64::MIN + 1, i64::MAX, i64::MAX - 1] {
+            for zone in ["UTC", "Europe/Berlin", "Pacific/Kiritimati"] {
+                assert!(!e.covers(t, zone).unwrap(), "`{expr}` at {t} in {zone}");
+            }
+        }
+    }
+}

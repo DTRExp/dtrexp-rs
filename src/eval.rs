@@ -73,8 +73,18 @@ fn scope_of(expr: &Expr) -> Scope {
     }
 }
 
+/// The instants `covers` evaluates: the timeline of years 1-9999 (spec §2),
+/// widened by a day either side so that every local time in it is
+/// evaluated whatever the zone. What an instant outside it covers is not
+/// specified (spec §3.1); here it covers nothing, which also keeps the
+/// arithmetic on any `i64` instant from overflowing.
+pub(crate) const TIMELINE_MS: std::ops::Range<i64> = -62_135_683_200_000..253_402_387_200_000;
+
 /// Does an expression branch cover `instant_ms`?
 pub fn expr_covers(expr: &Expr, instant_ms: i64, tz: &Tz) -> bool {
+    if !TIMELINE_MS.contains(&instant_ms) {
+        return false;
+    }
     let f = fields_of(instant_ms, tz);
     let scope = scope_of(expr);
     for sel in &expr.selectors {
@@ -329,5 +339,18 @@ mod tests {
         let t = Naive::new(2020, 1, 1, 5, 0, 0, 0); // one hour before the anchor
         assert_eq!(elapsed_units(CadUnit::Hour, anchor, t), -1);
         assert_eq!(elapsed_units(CadUnit::Minute, anchor, t), -60);
+    }
+
+    #[test]
+    fn the_timeline_is_years_one_through_9999_and_a_day_either_side() {
+        use crate::civil::days_from_civil;
+        assert_eq!(
+            TIMELINE_MS.start,
+            (days_from_civil(1, 1, 1) - 1) * MS_PER_DAY
+        );
+        assert_eq!(
+            TIMELINE_MS.end,
+            (days_from_civil(10000, 1, 1) + 1) * MS_PER_DAY
+        );
     }
 }

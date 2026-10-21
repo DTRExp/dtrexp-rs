@@ -45,196 +45,45 @@ fn domain_info(desig: Desig, scope: Scope) -> (bool, i64, i64, i64) {
     }
 }
 
-/// Check a selector's values and counts as soon as it is read, so that they
-/// compete by position with a grammar error later in the branch (spec §8,
-/// *Error positions*). A `D` selector passes here: its domain depends on the
-/// scope selectors, which may come later, so [`check`] decides it.
-pub fn check_read(sel: &Selector) -> Result<(), ParseError> {
-    match sel.desig {
+/// Check a value of a selector other than `D` as soon as it is read, so that
+/// it competes by position with a grammar error later in the branch (spec §8,
+/// *Error positions*). A `D` value passes here: its domain depends on the
+/// scope selectors, which may come later, so [`check_days`] decides it.
+pub fn check_value(desig: Desig, v: i64, pos: usize) -> Result<(), ParseError> {
+    match desig {
         Desig::Day => Ok(()),
-        Desig::Year => check_year(sel),
+        Desig::Year => year_value(pos, v),
         // Only `D` reads the scope.
-        _ => check_selector(sel, Scope::Month),
+        _ => value_in_domain(desig, Scope::Month, v, pos),
     }
 }
 
-/// Check the `D` domain against the completed branch's scope, and collect
-/// the branch's warnings.
-pub fn check(expr: &Expr) -> Result<Vec<Warning>, ParseError> {
+/// Check a stride interval against its parent domain as soon as it is read.
+/// `D`'s domain waits for its scope ([`check_days`]), and `Y` strides have
+/// no ceiling: the integer limit bounds them (spec §8).
+pub fn check_interval(desig: Desig, interval: i64, pos: usize) -> Result<(), ParseError> {
+    match desig {
+        Desig::Day | Desig::Year => Ok(()),
+        _ => interval_in_domain(desig, Scope::Month, interval, pos),
+    }
+}
+
+/// Check the `D` domain against the completed branch's scope. It reads
+/// values only, so it is safe on a branch that broke another rule, whose
+/// error it then competes with by position.
+pub fn check_days(expr: &Expr) -> Result<(), ParseError> {
     let scope = scope_of(expr);
     for sel in expr.selectors.iter().filter(|s| s.desig == Desig::Day) {
-        check_selector(sel, scope)?;
-    }
-    Ok(warnings(expr, scope))
-}
-
-fn check_year(sel: &Selector) -> Result<(), ParseError> {
-    if let Some((wd, _)) = sel.ordinal {
-        // Ordinals are E-only; this is unreachable via the parser, but be safe.
-        return Err(ParseError::new(
-            sel.pos,
-            format!("ordinal not valid here ({wd})"),
-        ));
-    }
-    for (atom, &(start_at, end_at)) in sel.atoms.iter().zip(&sel.at) {
-        match *atom {
-            Atom::All => {}
-            Atom::Single(v) => year_value(start_at, v)?,
-            Atom::Range { start, end, wrap } => {
-                if let Endpoint::Value(v) = start {
-                    year_value(start_at, v)?;
-                }
-                if let Endpoint::Value(v) = end {
-                    year_value(end_at, v)?;
-                }
-                if wrap {
-                    return Err(ParseError::new(
-                        end_at,
-                        "Y range cannot wrap — no edge to wrap around",
-                    ));
-                }
-            }
-            // Y strides have no interval ceiling: the integer limit bounds them
-            // (spec §8). The parser checked the interval and duration.
-            Atom::Stride { start, end, .. } => {
-                year_value(start_at, start)?;
-                if let Endpoint::Value(v) = end {
-                    year_value(end_at, v)?;
-                }
-            }
-        }
+        check_day(sel, scope)?;
     }
     Ok(())
 }
 
-fn year_value(pos: usize, v: i64) -> Result<(), ParseError> {
-    if v < 0 {
-        Err(ParseError::new(
-            pos,
-            "negative value on Y — no edge to count back from",
-        ))
-    } else if !(1..=9999).contains(&v) {
-        // Y takes 4-digit ISO years (spec §2): 1-9999.
-        Err(ParseError::new(pos, "year out of domain (1-9999)"))
-    } else {
-        Ok(())
-    }
-}
-
-fn check_selector(sel: &Selector, scope: Scope) -> Result<(), ParseError> {
-    let (zero_based, _minv, maxv, size) = domain_info(sel.desig, scope);
-    if let Some((wd, _)) = sel.ordinal {
-        if !(1..=7).contains(&wd) {
-            return Err(ParseError::new(sel.at[0].0, "weekday out of domain (1-7)"));
-        }
-        return Ok(());
-    }
-    let check_val = |v: i64, at: usize| -> Result<(), ParseError> {
-        if v >= 0 {
-            if !zero_based && v == 0 {
-                return Err(ParseError::new(at, "zero value"));
-            }
-            if v > maxv {
-                return Err(ParseError::new(at, "value out of domain"));
-            }
-        } else if v < -size {
-            return Err(ParseError::new(
-                at,
-                "negative value out of domain (symmetric parse-time check)",
-            ));
-        }
-        Ok(())
-    };
-    for (atom, &(start_at, end_at)) in sel.atoms.iter().zip(&sel.at) {
-        match *atom {
-            Atom::All => {}
-            Atom::Single(v) => check_val(v, start_at)?,
-            Atom::Range { start, end, .. } => {
-                if let Endpoint::Value(v) = start {
-                    check_val(v, start_at)?;
-                }
-                if let Endpoint::Value(v) = end {
-                    check_val(v, end_at)?;
-                }
-            }
-            Atom::Stride {
-                start,
-                end,
-                interval,
-                ..
-            } => {
-                check_val(start, start_at)?;
-                if let Endpoint::Value(v) = end {
-                    check_val(v, end_at)?;
-                }
-                if interval > size {
-                    return Err(ParseError::new(
-                        sel.interval_at,
-                        "stride interval exceeds parent domain — use a cadence",
-                    ));
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-// ---- satisfiability warnings --------------------------------------------
-
-/// Which values in [minv, maxv] a (non-Year) selector matches.
-fn matched_values(sel: &Selector, minv: i64, maxv: i64) -> Vec<i64> {
-    (minv..=maxv)
-        .filter(|&v| {
-            let hit = sel.atoms.iter().any(|a| atom_match(a, minv, maxv, v));
-            if sel.exclude {
-                !hit
-            } else {
-                hit
-            }
-        })
-        .collect()
-}
-
-/// The Y selector's values as a closed, enumerable set (≤1000-year span), else
-/// `None` for open/unbounded/non-enumerable spans. A stride is sugar over its
-/// range and enumerates to the years it selects (spec §9.1).
-fn enumerate_years(expr: &Expr) -> Option<Vec<i64>> {
-    let sel = expr.selectors.iter().find(|s| s.desig == Desig::Year)?;
-    if sel.exclude {
-        return None;
-    }
-    let mut years = Vec::new();
-    for atom in &sel.atoms {
-        // Validated years are 1..=9999 and never wrap, so `a <= b` here.
-        let (a, b) = match *atom {
-            Atom::Single(v) => (v, v),
-            Atom::Range {
-                start: Endpoint::Value(a),
-                end: Endpoint::Value(b),
-                ..
-            } => (a, b),
-            Atom::Stride {
-                start,
-                end: Endpoint::Value(b),
-                ..
-            } => (start, b),
-            _ => return None, // `*` (All, or an open end) → open span
-        };
-        if b - a > 1000 {
-            return None;
-        }
-        years.extend((a..=b).filter(|&y| atom_match(atom, 1, 9999, y)));
-    }
-    // Every atom selects at least its own start, so a completed loop leaves
-    // `years` non-empty.
-    let (lo, hi) = (*years.iter().min().unwrap(), *years.iter().max().unwrap());
-    if hi - lo > 1000 {
-        return None;
-    }
-    Some(years)
-}
-
-fn warnings(expr: &Expr, scope: Scope) -> Vec<Warning> {
+/// The warnings of a branch that broke no rule. They evaluate its selectors
+/// (a stride's interval divides, a year span is enumerated), so a branch
+/// holding a value its rules reject never reaches here.
+pub fn warnings(expr: &Expr) -> Vec<Warning> {
+    let scope = scope_of(expr);
     let mut ws = Vec::new();
     let month_set = expr
         .selectors
@@ -295,6 +144,141 @@ fn warnings(expr: &Expr, scope: Scope) -> Vec<Warning> {
     }
 
     ws
+}
+
+fn year_value(pos: usize, v: i64) -> Result<(), ParseError> {
+    if v < 0 {
+        Err(ParseError::new(
+            pos,
+            "negative value on Y — no edge to count back from",
+        ))
+    } else if !(1..=9999).contains(&v) {
+        // Y takes 4-digit ISO years (spec §2): 1-9999.
+        Err(ParseError::new(pos, "year out of domain (1-9999)"))
+    } else {
+        Ok(())
+    }
+}
+
+fn value_in_domain(desig: Desig, scope: Scope, v: i64, at: usize) -> Result<(), ParseError> {
+    let (zero_based, _minv, maxv, size) = domain_info(desig, scope);
+    if v >= 0 {
+        if !zero_based && v == 0 {
+            return Err(ParseError::new(at, "zero value"));
+        }
+        if v > maxv {
+            return Err(ParseError::new(at, "value out of domain"));
+        }
+    } else if v < -size {
+        return Err(ParseError::new(
+            at,
+            "negative value out of domain (symmetric parse-time check)",
+        ));
+    }
+    Ok(())
+}
+
+fn interval_in_domain(
+    desig: Desig,
+    scope: Scope,
+    interval: i64,
+    at: usize,
+) -> Result<(), ParseError> {
+    let (_, _, _, size) = domain_info(desig, scope);
+    if interval > size {
+        return Err(ParseError::new(
+            at,
+            "stride interval exceeds parent domain — use a cadence",
+        ));
+    }
+    Ok(())
+}
+
+/// A `D` selector's values and stride interval, against its scope.
+fn check_day(sel: &Selector, scope: Scope) -> Result<(), ParseError> {
+    let check_val = |v: i64, at: usize| value_in_domain(Desig::Day, scope, v, at);
+    for (atom, &(start_at, end_at)) in sel.atoms.iter().zip(&sel.at) {
+        match *atom {
+            Atom::All => {}
+            Atom::Single(v) => check_val(v, start_at)?,
+            Atom::Range { start, end, .. } => {
+                if let Endpoint::Value(v) = start {
+                    check_val(v, start_at)?;
+                }
+                if let Endpoint::Value(v) = end {
+                    check_val(v, end_at)?;
+                }
+            }
+            Atom::Stride {
+                start,
+                end,
+                interval,
+                ..
+            } => {
+                check_val(start, start_at)?;
+                if let Endpoint::Value(v) = end {
+                    check_val(v, end_at)?;
+                }
+                interval_in_domain(Desig::Day, scope, interval, sel.interval_at)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---- satisfiability warnings --------------------------------------------
+
+/// Which values in [minv, maxv] a (non-Year) selector matches.
+fn matched_values(sel: &Selector, minv: i64, maxv: i64) -> Vec<i64> {
+    (minv..=maxv)
+        .filter(|&v| {
+            let hit = sel.atoms.iter().any(|a| atom_match(a, minv, maxv, v));
+            if sel.exclude {
+                !hit
+            } else {
+                hit
+            }
+        })
+        .collect()
+}
+
+/// The Y selector's values as a closed, enumerable set (≤1000-year span), else
+/// `None` for open/unbounded/non-enumerable spans. A stride is sugar over its
+/// range and enumerates to the years it selects (spec §9.1).
+fn enumerate_years(expr: &Expr) -> Option<Vec<i64>> {
+    let sel = expr.selectors.iter().find(|s| s.desig == Desig::Year)?;
+    if sel.exclude {
+        return None;
+    }
+    let mut years = Vec::new();
+    for atom in &sel.atoms {
+        // Validated years are 1..=9999 and never wrap, so `a <= b` here.
+        let (a, b) = match *atom {
+            Atom::Single(v) => (v, v),
+            Atom::Range {
+                start: Endpoint::Value(a),
+                end: Endpoint::Value(b),
+                ..
+            } => (a, b),
+            Atom::Stride {
+                start,
+                end: Endpoint::Value(b),
+                ..
+            } => (start, b),
+            _ => return None, // `*` (All, or an open end) → open span
+        };
+        if b - a > 1000 {
+            return None;
+        }
+        years.extend((a..=b).filter(|&y| atom_match(atom, 1, 9999, y)));
+    }
+    // Every atom selects at least its own start, so a completed loop leaves
+    // `years` non-empty.
+    let (lo, hi) = (*years.iter().min().unwrap(), *years.iter().max().unwrap());
+    if hi - lo > 1000 {
+        return None;
+    }
+    Some(years)
 }
 
 /// Fixed-domain selectors (Y/Q/M/E/H/m/s): empty match set ⇒ unsatisfiable.
@@ -420,20 +404,6 @@ fn week_unsat(sel: &Selector, expr: &Expr) -> Option<Warning> {
 mod tests {
     use super::*;
 
-    fn year_selector(ordinal: Option<(i64, i64)>) -> Expr {
-        let mut expr = Expr::default();
-        expr.selectors.push(Selector {
-            desig: Desig::Year,
-            atoms: vec![Atom::Single(2020)],
-            exclude: false,
-            ordinal,
-            pos: 0,
-            at: vec![(1, 1)],
-            interval_at: 0,
-        });
-        expr
-    }
-
     #[test]
     fn year_domain_is_years_one_through_9999() {
         // The Year row of the domain table: 1-based, edges 1 and 9999 (spec §3.1).
@@ -444,16 +414,9 @@ mod tests {
     }
 
     #[test]
-    fn year_accepts_a_plain_value() {
-        // Guards the surrounding check: a normal Year selector validates.
-        assert!(check_read(&year_selector(None).selectors[0]).is_ok());
-    }
-
-    #[test]
-    fn year_rejects_an_ordinal() {
-        // Ordinals are E-only; the parser never builds this, but `check_year`
-        // defends the invariant if an ordinal ever reaches a Year selector.
-        let err = check_read(&year_selector(Some((3, 2))).selectors[0]).unwrap_err();
-        assert!(err.message.contains("ordinal not valid here"));
+    fn a_year_value_is_checked_as_it_is_read() {
+        assert!(check_value(Desig::Year, 2020, 1).is_ok());
+        assert_eq!(check_value(Desig::Year, 0, 1).unwrap_err().pos, 1);
+        assert_eq!(check_value(Desig::Year, -1, 2).unwrap_err().pos, 2);
     }
 }

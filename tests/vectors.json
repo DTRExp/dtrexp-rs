@@ -1828,6 +1828,61 @@
       "expression": "D*:5/2",
       "reason": "a stride needs an explicit start",
       "position": 4
+    },
+    {
+      "expression": "D1/40 X",
+      "reason": "a D stride ceiling waits for the branch, so the earlier grammar error wins",
+      "position": 6
+    },
+    {
+      "expression": "D40 T",
+      "reason": "T needs a value — the end of the input, a grammar error, comes before the branch ends",
+      "position": 5
+    },
+    {
+      "expression": "D40 T0900:",
+      "reason": "a T range needs its end — the end of the input",
+      "position": 10
+    },
+    {
+      "expression": "M1,*,X",
+      "reason": "the bare '*' is decided at the ',' after it, before the stray 'X'",
+      "position": 3
+    },
+    {
+      "expression": "M!*,X",
+      "reason": "the bare '*' after '!' is decided at the ',' after it",
+      "position": 2
+    },
+    {
+      "expression": "D40 T0900.5",
+      "reason": "a malformed fraction is a rule error; at the branch's end D40 is earlier",
+      "position": 1
+    },
+    {
+      "expression": "D40 20180120T09",
+      "reason": "a malformed date literal is a rule error; at the branch's end D40 is earlier",
+      "position": 1
+    },
+    {
+      "expression": "D40 T090",
+      "reason": "a malformed time value is a rule error; D40 is earlier",
+      "position": 1
+    },
+    {
+      "expression": "D40,*",
+      "reason": "a bare '*' in a list is a rule error, so at the branch's end D40 is earlier",
+      "position": 1
+    },
+    {
+      "expression": "D40 20200101:",
+      "reason": "bounds need their end date — the end of the input",
+      "position": 13
+    },
+    {
+      "expression": "D40 *:",
+      "reason": "bounds need a date after '*:' — the end of the input",
+      "position": 6
     }
   ],
   "warnings": [
