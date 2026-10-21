@@ -45,15 +45,25 @@ fn domain_info(desig: Desig, scope: Scope) -> (bool, i64, i64, i64) {
     }
 }
 
-/// Run hard validation (errors) and collect warnings for one branch.
+/// Check a selector's values and counts as soon as it is read, so that they
+/// compete by position with a grammar error later in the branch (spec §8,
+/// *Error positions*). A `D` selector passes here: its domain depends on the
+/// scope selectors, which may come later, so [`check`] decides it.
+pub fn check_read(sel: &Selector) -> Result<(), ParseError> {
+    match sel.desig {
+        Desig::Day => Ok(()),
+        Desig::Year => check_year(sel),
+        // Only `D` reads the scope.
+        _ => check_selector(sel, Scope::Month),
+    }
+}
+
+/// Check the `D` domain against the completed branch's scope, and collect
+/// the branch's warnings.
 pub fn check(expr: &Expr) -> Result<Vec<Warning>, ParseError> {
     let scope = scope_of(expr);
-    for sel in &expr.selectors {
-        if sel.desig == Desig::Year {
-            check_year(sel)?;
-        } else {
-            check_selector(sel, scope)?;
-        }
+    for sel in expr.selectors.iter().filter(|s| s.desig == Desig::Day) {
+        check_selector(sel, scope)?;
     }
     Ok(warnings(expr, scope))
 }
@@ -436,14 +446,14 @@ mod tests {
     #[test]
     fn year_accepts_a_plain_value() {
         // Guards the surrounding check: a normal Year selector validates.
-        assert!(check(&year_selector(None)).is_ok());
+        assert!(check_read(&year_selector(None).selectors[0]).is_ok());
     }
 
     #[test]
     fn year_rejects_an_ordinal() {
         // Ordinals are E-only; the parser never builds this, but `check_year`
         // defends the invariant if an ordinal ever reaches a Year selector.
-        let err = check(&year_selector(Some((3, 2)))).unwrap_err();
+        let err = check_read(&year_selector(Some((3, 2))).selectors[0]).unwrap_err();
         assert!(err.message.contains("ordinal not valid here"));
     }
 }

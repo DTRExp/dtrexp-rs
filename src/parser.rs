@@ -13,8 +13,8 @@ use crate::validate;
 const INTEGER_LIMIT: i64 = 2_147_483_647;
 
 /// Parse a whole DTRExp into its `|`-separated branches, each statically
-/// validated as soon as it is complete ([`crate::validate`]), and their
-/// warnings.
+/// validated ([`crate::validate`]): a selector as soon as it is read, the `D`
+/// domain and the warnings once the branch is complete.
 pub fn parse_branches(input: &str) -> Result<(Vec<Expr>, Vec<Warning>), ParseError> {
     let mut p = Parser {
         b: input.as_bytes(),
@@ -25,8 +25,8 @@ pub fn parse_branches(input: &str) -> Result<(Vec<Expr>, Vec<Warning>), ParseErr
     let mut warnings = Vec::new();
     loop {
         let expr = p.parse_expression().map_err(|e| p.earliest(e))?;
-        // The static rules run on the completed branch; of everything it
-        // broke, the earliest position wins.
+        // The `D` domain waits for the completed branch's scope; of everything
+        // the branch broke, the earliest position wins.
         let checked = validate::check(&expr);
         if let Some(fault) = p.fault.take() {
             return Err(earliest(fault, checked.err()));
@@ -274,12 +274,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        // Checked once the selector is read: a malformed repeat fails on its
-        // own syntax first (spec §8, *Error positions*).
-        if expr.selectors.iter().any(|s| s.desig == desig) {
-            self.fault(pos, "duplicate designator in one expression");
-        }
-        expr.selectors.push(Selector {
+        let sel = Selector {
             desig,
             atoms,
             exclude,
@@ -287,7 +282,17 @@ impl<'a> Parser<'a> {
             pos,
             at,
             interval_at,
-        });
+        };
+        // Checked once the selector is read: its values compete with a grammar
+        // error later in the branch, and a malformed repeat fails on its own
+        // syntax first (spec §8, *Error positions*).
+        if let Err(e) = validate::check_read(&sel) {
+            self.fault(e.pos, &e.message);
+        }
+        if expr.selectors.iter().any(|s| s.desig == desig) {
+            self.fault(pos, "duplicate designator in one expression");
+        }
+        expr.selectors.push(sel);
         Ok(())
     }
 

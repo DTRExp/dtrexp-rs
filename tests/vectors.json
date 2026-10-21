@@ -1764,6 +1764,51 @@
       "expression": "20200101T120020200102/10D",
       "reason": "a date literal is never followed by another digit",
       "position": 0
+    },
+    {
+      "expression": "M13 X",
+      "reason": "the earliest error wins, a later grammar error included",
+      "position": 1
+    },
+    {
+      "expression": "M13 M1",
+      "reason": "the value is out of domain before the repeated designator",
+      "position": 1
+    },
+    {
+      "expression": "M3/14 X",
+      "reason": "the stride interval exceeds the domain before the stray character",
+      "position": 3
+    },
+    {
+      "expression": "Y0 M",
+      "reason": "the year is out of domain before the missing value",
+      "position": 1
+    },
+    {
+      "expression": "T0900:0900 %",
+      "reason": "the empty T range comes before the stray character",
+      "position": 6
+    },
+    {
+      "expression": "M0 |",
+      "reason": "the value is out of domain before the empty branch",
+      "position": 1
+    },
+    {
+      "expression": "E7#6 E1",
+      "reason": "the ordinal is out of range before the repeated designator",
+      "position": 3
+    },
+    {
+      "expression": "D40 X",
+      "reason": "a D value's domain waits for the branch, so the earlier grammar error wins",
+      "position": 4
+    },
+    {
+      "expression": "D40 M13",
+      "reason": "with the branch complete, D40 is out of the month domain, the earliest error",
+      "position": 1
     }
   ],
   "warnings": [

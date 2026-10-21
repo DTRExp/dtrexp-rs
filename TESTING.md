@@ -37,6 +37,8 @@ Full run: **1359 mutants: 1305 caught, 15 equivalent, 39 unviable, 0 unjustified
 
 Draft 3 (2026-10-21) was run on the lines it changed, in both builds: `git diff -- src > src.diff`, then `cargo mutants --no-shuffle -j 2 --in-diff src.diff -f src/parser.rs -f src/validate.rs -f src/eval.rs -f src/tz.rs -f src/lib.rs -f src/ast.rs`, and again with `--features host-tz`. Each build: **260 mutants: 235 caught, 3 timeouts, 21 unviable, 1 equivalent** (the `eval.rs:268` row below). A whole-file run of the six changed files is 956 mutants, about 80 minutes per build at 10 s a mutant, so the changed lines are the scope. The draft 3 rewrite of the year enumeration removed seven equivalents of the old table (the `validate.rs` guards it no longer has, and the 1000-year cutoff, which a strided span now makes observable), and stopping the occurrence scan at its estimate removed the high-bound one; the table holds 7.
 
+Checking a selector's values as it is read, so that they compete with a later grammar error (spec §8), was run the same way on its own lines: **12 mutants: 9 caught, 3 unviable** in each build, no survivors.
+
 Nine of the caught are timeout kills: non-termination mutants (`skip_spaces` looping forever, parser stubs that never consume input, a deleted match arm that sends a domain scan to `i64::MAX`, a footer cursor whose position never advances). A suite that can never pass has detected the mutant; timeouts count as kills, as cargo-mutants and Stryker both classify them.
 
 Unviable mutants are compile errors (`Default::default()` stubs for types without `Default`): nothing behavioural to test.

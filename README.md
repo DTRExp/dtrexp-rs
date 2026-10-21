@@ -75,7 +75,7 @@ Wall-clock times resolve as they do for a loaded zone; a skipped time moves forw
 
 ## Errors and Warnings
 
-Both a `ParseError` and a `Warning` carry a **position**: the 0-based offset of the first character of the token at fault, as spec §8 defines it. It counts code points and bytes alike, since every character before it is ASCII. When an expression breaks more than one rule, the error is the one with the earliest position (`M13/1` names the `13`, not the interval).
+Both a `ParseError` and a `Warning` carry a **position**: the 0-based offset of the first character of the token at fault, as spec §8 defines it. It counts code points and bytes alike, since every character before it is ASCII. When an expression breaks more than one rule, the error is the one with the earliest position, a later grammar error included (`M13/1` and `M13 X` both name the `13`); only a `D` value's domain waits for the branch to end, since it depends on scope selectors that may follow it (`D40 X` names the `X`).
 
 ```rust
 let err = dtrexp::parse("T2500").unwrap_err();      // hour out of range
